@@ -79,7 +79,7 @@ namespace ProductionOrderAddOn.Services
             catch (Exception ex)
             {
                 // Bungkus ulang supaya caller dapat pesan kontekstual
-                throw new Exception($"Gagal memproses file Excel: {ex.Message}", ex);
+                throw new Exception($"Failed to proceed Excel file: {ex.Message}", ex);
             }
 
             return results;

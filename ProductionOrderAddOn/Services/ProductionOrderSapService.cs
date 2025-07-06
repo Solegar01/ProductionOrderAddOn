@@ -67,8 +67,7 @@ namespace ProductionOrderAddOn.Services
             }
         }
 
-        public static void UpdatePoStatus(int docEntry,
-                                          BoProductionOrderStatusEnum target)
+        public static void UpdatePoStatus(int docEntry, BoProductionOrderStatusEnum target)
         {
             Company oCompany = CompanyService.GetCompany();
 
@@ -77,7 +76,7 @@ namespace ProductionOrderAddOn.Services
                          BoObjectTypes.oProductionOrders);
 
             if (!po.GetByKey(docEntry))
-                throw new InvalidOperationException($"PO DocEntry {docEntry} tidak ditemukan.");
+                throw new InvalidOperationException($"Production Order DocEntry {docEntry} tidak ditemukan.");
 
             // Jika sudah di status target, abaikan
             if (po.ProductionOrderStatus == target) return;
@@ -88,7 +87,7 @@ namespace ProductionOrderAddOn.Services
             {
                 oCompany.GetLastError(out int errCode, out string errMsg);
                 throw new InvalidOperationException(
-                    $"Gagal update status PO ({errCode}) {errMsg}");
+                    $"Failed to update status Production Order ({errCode}) {errMsg}");
             }
         }
     }
