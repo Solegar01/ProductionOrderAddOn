@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using ProductionOrderAddOn.Services;
 using SAPbouiCOM.Framework;
 
 namespace ProductionOrderAddOn
@@ -43,15 +44,18 @@ namespace ProductionOrderAddOn
             {
                 case SAPbouiCOM.BoAppEventTypes.aet_ShutDown:
                     //Exit Add-On
+                    CompanyService.Disconnect();
                     System.Windows.Forms.Application.Exit();
                     break;
                 case SAPbouiCOM.BoAppEventTypes.aet_CompanyChanged:
+                    CompanyService.Disconnect();
                     break;
                 case SAPbouiCOM.BoAppEventTypes.aet_FontChanged:
                     break;
                 case SAPbouiCOM.BoAppEventTypes.aet_LanguageChanged:
                     break;
                 case SAPbouiCOM.BoAppEventTypes.aet_ServerTerminition:
+                    CompanyService.Disconnect();
                     break;
                 default:
                     break;

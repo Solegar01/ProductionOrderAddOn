@@ -27,7 +27,6 @@ namespace ProductionOrderAddOn
         private SAPbouiCOM.EditText TxtPath;
         private SAPbouiCOM.Button BtnBrowse;
         private string fileName;
-        private SAPbouiCOM.Button BtnPreview;
 
         public ImportForm()
         {
@@ -50,8 +49,8 @@ namespace ProductionOrderAddOn
             this.TxtPath = ((SAPbouiCOM.EditText)(this.GetItem("TxtPath").Specific));
             this.BtnBrowse = ((SAPbouiCOM.Button)(this.GetItem("BtnBrowse").Specific));
             this.BtnBrowse.ClickBefore += new SAPbouiCOM._IButtonEvents_ClickBeforeEventHandler(this.BtnBrowse_ClickBefore);
-            this.BtnPreview = ((SAPbouiCOM.Button)(this.GetItem("BtnPreview").Specific));
-            this.BtnPreview.ClickBefore += new SAPbouiCOM._IButtonEvents_ClickBeforeEventHandler(this.BtnPreview_ClickBefore);
+            this.TxtFrom.ValidateAfter += new SAPbouiCOM._IEditTextEvents_ValidateAfterEventHandler(this.DateRangeValidation);
+            this.TxtTo.ValidateAfter += new SAPbouiCOM._IEditTextEvents_ValidateAfterEventHandler(this.DateRangeValidation);
             this.OnCustomInitialize();
 
         }
@@ -108,6 +107,8 @@ namespace ProductionOrderAddOn
             try
             {
                 this.GetPathFile();
+                this.ImportFromExcelProdOrder();
+                this.SetDataGrid();
             }
             catch (Exception ex)
             {
@@ -115,17 +116,88 @@ namespace ProductionOrderAddOn
             }
         }
 
-        private void BtnPreview_ClickBefore(object sboObject, SAPbouiCOM.SBOItemEventArg pVal, out bool BubbleEvent)
+        //private void TxtDateFrom_ValidateAfter(object sboObject, SAPbouiCOM.SBOItemEventArg pVal)
+        //{
+        //    //--------------------------------------------------------  
+        //    // 1) PARSE string "yyyyMMdd" dari EditText → DateTime
+        //    // ------------------------------------------------------------------
+        //    if (!DateTime.TryParseExact(this.TxtFrom.Value, "yyyyMMdd",
+        //                                CultureInfo.InvariantCulture,
+        //                                DateTimeStyles.None, out DateTime tgl))
+        //    {
+        //        // format salah → biarkan SAP menampilkan pesan default
+        //        return;
+        //    }
+
+        //    // ------------------------------------------------------------------  
+        //    // 2) VALIDASI: minimal hari ini
+        //    // ------------------------------------------------------------------
+        //    if (tgl.Date < DateTime.Today)
+        //    {
+        //        Application.SBO_Application.StatusBar.SetText(
+        //            "Invalid date from.",
+        //            SAPbouiCOM.BoMessageTime.bmt_Short,
+        //            SAPbouiCOM.BoStatusBarMessageType.smt_Error);
+
+        //        // Kembalikan nilai ke hari ini supaya valid
+        //        this.TxtFrom.Value = null;
+        //        return;
+        //    }
+
+        //    DateRangeValidation(pVal);
+        //}
+
+        //private void TxtDateTo_ValidateAfter(object sboObject, SAPbouiCOM.SBOItemEventArg pVal)
+        //{
+        //    //--------------------------------------------------------  
+        //    // 1) PARSE string "yyyyMMdd" dari EditText → DateTime
+        //    // ------------------------------------------------------------------
+        //    if (!DateTime.TryParseExact(this.TxtTo.Value, "yyyyMMdd",
+        //                                CultureInfo.InvariantCulture,
+        //                                DateTimeStyles.None, out DateTime tgl))
+        //    {
+        //        // format salah → biarkan SAP menampilkan pesan default
+        //        return;
+        //    }
+
+        //    // ------------------------------------------------------------------  
+        //    // 2) VALIDASI: minimal hari ini
+        //    // ------------------------------------------------------------------
+        //    if (tgl.Date < DateTime.Today)
+        //    {
+        //        Application.SBO_Application.StatusBar.SetText(
+        //            "Invalid date to.",
+        //            SAPbouiCOM.BoMessageTime.bmt_Short,
+        //            SAPbouiCOM.BoStatusBarMessageType.smt_Error);
+
+        //        // Kembalikan nilai ke hari ini supaya valid
+        //        this.TxtTo.Value = null;
+        //        return;
+        //    }
+
+        //    DateRangeValidation(pVal);
+        //}
+
+        private void DateRangeValidation(object sboObject, SAPbouiCOM.SBOItemEventArg pVal)
         {
-            BubbleEvent = true;
-            try
+            DateTime? from = ParseDate_yyyyMMdd(TxtFrom.Value);
+            DateTime? to = ParseDate_yyyyMMdd(TxtTo.Value);
+
+            // 5) Jika KEDUA‑DUANYA terisi dan From > To → error
+            if (from.HasValue && to.HasValue && from.Value.Date > to.Value.Date)
             {
-                this.ImportFromExcelProdOrder();
-                this.SetDataGrid();
-            }
-            catch (Exception ex)
-            {
-                Application.SBO_Application.StatusBar.SetText(ex.Message, SAPbouiCOM.BoMessageTime.bmt_Short, SAPbouiCOM.BoStatusBarMessageType.smt_Error);
+                Application.SBO_Application.StatusBar.SetText(
+                    "Date From cannot be greater than Date To",
+                    SAPbouiCOM.BoMessageTime.bmt_Short,
+                    SAPbouiCOM.BoStatusBarMessageType.smt_Error);
+
+                // Kembalikan field yang barusan diubah supaya tetap valid
+                if (pVal.ItemUID == "TxtFrom")
+                    TxtFrom.Value = to.Value.ToString("yyyyMMdd");
+                else                                            // TxtTo yang diubah
+                    TxtTo.Value = from.Value.ToString("yyyyMMdd");
+
+                return;
             }
         }
 
@@ -193,28 +265,54 @@ namespace ProductionOrderAddOn
         {
             try
             {
-                int result = Application.SBO_Application.MessageBox("Are you sure you want to save the data?",1,"Yes","No","");                                      
-                if (result == 1)
-                {
-                    if (this.listData == null)
-                    {
-                        this.ImportFromExcelProdOrder();
-                    }
-                    int res = ProductionOrderSapService.CreateProductionOrders(listData);
-                    if (res > 0)
-                    {
-                        Application.SBO_Application.StatusBar.SetText("Data successfully imported.", SAPbouiCOM.BoMessageTime.bmt_Short, SAPbouiCOM.BoStatusBarMessageType.smt_Success);
-                    }
-                    else
-                    {
-                        throw new Exception($"Import Data Fail - No data found.");
-                    }
-                }
+                if (string.IsNullOrEmpty(this.fileName))
+                    throw new Exception("Please select a file to import.");
+
+                int result = Application.SBO_Application.MessageBox(
+                    "Are you sure you want to Import to SAP?",
+                    1, "Yes", "No", "");
+
+                if (result != 1)
+                    return;
+
+                if (listData == null || listData.Count == 0)
+                    this.ImportFromExcelProdOrder();
+
+                if (listData == null || listData.Count == 0)
+                    throw new Exception("No data found in the selected file.");
+
+                // 🌟 Satu baris rekursif → membuat semua PO hingga WIP selesai
+                List<int> allDocEntries = ProductionOrderSapService.CreateProductionOrders(listData);
+
+                if (allDocEntries == null || allDocEntries.Count == 0)
+                    throw new Exception("No production orders were created in SAP.");
+
+                Application.SBO_Application.StatusBar.SetText(
+                    "Data successfully imported.",
+                    SAPbouiCOM.BoMessageTime.bmt_Short,
+                    SAPbouiCOM.BoStatusBarMessageType.smt_Success);
+
+                this.Reset();
             }
             catch (Exception ex)
             {
-                throw ex;
+
+                throw new Exception("Error during import: " + ex.Message);
+
+                // Optional: log ke file atau tampilkan pesan lebih detail jika diperlukan
             }
+        }
+        
+        private void Reset()
+        {
+            if (listData != null) this.listData.Clear();
+            if (dt != null)
+            {
+                this.dt.Clear();
+                this.GridData.DataTable.Clear();
+            }
+            this.fileName = String.Empty;
+            this.TxtPath.Value = String.Empty;
         }
         
         /// <summary>
@@ -326,5 +424,6 @@ namespace ProductionOrderAddOn
                    ? (DateTime?)dt
                    : null;
         }
+        
     }
 }

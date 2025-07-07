@@ -30,13 +30,45 @@ namespace ProductionOrderAddOn.Services
                 {
                     IXLWorksheet ws = workbook.Worksheet(1);
 
+                    if (fromDate.HasValue)
+                    {
+                        // C3 = baris‑3, kolom‑3  ➜ XLAddress(3,3)
+                        string c3Text = ws.Cell(3, 3).GetValue<string>()?.Trim();
+
+                        if (!DateTime.TryParse(c3Text, out DateTime c3Date))
+                            throw new Exception($"Header C3 ('{c3Text}') bukan tanggal yang valid.");
+
+                        if (c3Date.Month != fromDate.Value.Month || c3Date.Year != fromDate.Value.Year)
+                        {
+                            throw new Exception(
+                            $"The month and year in Excel header (C3: {c3Date:MM/yyyy}) " +
+                            $"do not match the selected Date From ({fromDate:MM/yyyy}).");
+                        }
+                    }
+
+                    if (toDate.HasValue)
+                    {
+                        // C3 = baris‑3, kolom‑3  ➜ XLAddress(3,3)
+                        string c3Text = ws.Cell(3, 3).GetValue<string>()?.Trim();
+
+                        if (!DateTime.TryParse(c3Text, out DateTime c3Date))
+                            throw new Exception($"Header C3 ('{c3Text}') bukan tanggal yang valid.");
+
+                        if (c3Date.Month != toDate.Value.Month || c3Date.Year != toDate.Value.Year)
+                        {
+                            throw new Exception(
+                            $"The month and year in Excel header (C3: {c3Date:MM/yyyy}) " +
+                            $"do not match the selected Date To ({toDate:MM/yyyy}).");
+                        }
+                    }
+
                     const int startColDate = 3;   // kolom C
                     const int endCol = 34;  // kolom AH
-
+                    
                     // 1️⃣  Tentukan rentang efektif
                     DateTime rangeStart = (fromDate ?? DateTime.MinValue).Date;
                     DateTime rangeEnd = (toDate ?? DateTime.MaxValue).Date;
-
+                    
                     // 2️⃣  Petakan kolom‑>tanggal di header (baris 3)
                     var colDateMap = new List<(int ColIndex, DateTime OrderDate)>();
 
@@ -69,7 +101,8 @@ namespace ProductionOrderAddOn.Services
                                     ProdNo = row.Cell(1).GetValue<string>(),
                                     ProdDesc = row.Cell(2).GetValue<string>(),
                                     Qty = qty,
-                                    OrderDate = orderDate
+                                    OrderDate = orderDate,
+                                    ProdType = ProductionType.FG,
                                 });
                             }
                         }
