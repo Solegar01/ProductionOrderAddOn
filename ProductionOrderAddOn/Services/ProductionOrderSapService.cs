@@ -115,6 +115,10 @@ namespace ProductionOrderAddOn.Services
                         po.StartDate = m.OrderDate.Date;
                         po.DueDate = m.OrderDate.Date;
                         po.UserFields.Fields.Item("U_T2_PRODTYPE").Value = m.ProdType.ToString();
+                        if (m.RefProd != null)
+                        {
+                            po.UserFields.Fields.Item("U_T2_Ref_Production").Value = m.RefProd;
+                        }
 
                         int rc = po.Add();
                         if (rc != 0)
@@ -194,19 +198,20 @@ namespace ProductionOrderAddOn.Services
                 return new List<ProductionOrderModel>();
 
             const string sql = @"
-        SELECT
-            t2.Code        AS ProdNo,
-            t2.ItemName    AS ProdDesc,
-            t3.PlannedQty  AS Qty,
-            CAST(t0.PostDate AS DATE) AS OrderDate
-        FROM OWOR  t0
-        INNER JOIN OITT t1 ON t0.ItemCode = t1.Code
-        INNER JOIN ITT1 t2 ON t1.Code     = t2.Father
-        INNER JOIN WOR1 t3 ON t3.DocEntry = t0.DocEntry
-                          AND t3.ItemCode = t2.Code
-        WHERE t0.DocEntry IN @DocEntryList
-          AND ISNULL(t2.U_T2_ITEM_GROUP, '') = 'WIP'
-        ORDER BY t0.PostDate DESC, t2.Code;";
+                                SELECT
+                                    t0.DocEntry      AS RefProd,
+                                    t2.Code        AS ProdNo,
+                                    t2.ItemName    AS ProdDesc,
+                                    t3.PlannedQty  AS Qty,
+                                    CAST(t0.PostDate AS DATE) AS OrderDate
+                                FROM OWOR  t0
+                                INNER JOIN OITT t1 ON t0.ItemCode = t1.Code
+                                INNER JOIN ITT1 t2 ON t1.Code     = t2.Father
+                                INNER JOIN WOR1 t3 ON t3.DocEntry = t0.DocEntry
+                                                  AND t3.ItemCode = t2.Code
+                                WHERE t0.DocEntry IN @DocEntryList
+                                  AND ISNULL(t2.U_T2_ITEM_GROUP, '') = 'WIP'
+                                ORDER BY t0.PostDate DESC, t2.Code;";
 
             try
             {
