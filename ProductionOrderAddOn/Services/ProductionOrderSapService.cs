@@ -14,70 +14,8 @@ namespace ProductionOrderAddOn.Services
     {
         private static readonly string _connStr =
         ConfigurationManager.ConnectionStrings["B1Connection"].ConnectionString;
-        /// <summary>
-        /// Menyimpan list ProductionOrderModel sebagai dokumen Production Order di SAP B1.
-        /// </summary>
-        /// <returns>Jumlah PO berhasil.</returns>
-        //public static List<int> CreateProductionOrders(IEnumerable<ProductionOrderModel> models)
-        //{
-        //    Company oCompany = CompanyService.GetCompany();   // singleton koneksi
-        //    List<int> listDocEntry = new List<int>();
-
-        //    // Optional: jalankan dalam 1 transaksi agar atomic
-        //    bool inTran = false;
-        //    try
-        //    {
-        //        if (!oCompany.InTransaction)
-        //        {
-        //            oCompany.StartTransaction();
-        //            inTran = true;
-        //        }
-
-        //        foreach (var m in models)
-        //        {
-        //            ProductionOrders po = (ProductionOrders)
-        //                oCompany.GetBusinessObject(BoObjectTypes.oProductionOrders);
-
-        //            po.ItemNo = m.ProdNo;
-        //            po.ProductionOrderType = BoProductionOrderTypeEnum.bopotStandard;
-        //            po.ProductionOrderStatus = BoProductionOrderStatusEnum.boposPlanned;
-        //            po.PlannedQuantity = m.Qty;
-        //            po.PostingDate = m.OrderDate;
-        //            po.StartDate = m.OrderDate;
-        //            po.DueDate = m.OrderDate;
-        //            po.UserFields.Fields.Item("U_T2_PRODTYPE").Value = m.ProdType.ToString();
-
-        //            // contoh: isi User Fields jika perlu
-        //            // po.UserFields.Fields.Item("U_Desc").Value = m.ProdDesc;
-
-        //            int rc = po.Add();
-        //            if (rc != 0)
-        //            {
-        //                oCompany.GetLastError(out int errCode, out string errMsg);
-        //                throw new Exception($"Add() failed ({errCode}) {errMsg}");
-        //            }
-
-        //            int docEntry = int.Parse(oCompany.GetNewObjectKey());
-
-        //            UpdatePoStatus(docEntry, BoProductionOrderStatusEnum.boposReleased);
-
-        //            listDocEntry.Add(docEntry);
-        //        }
-
-        //        if (inTran) oCompany.EndTransaction(BoWfTransOpt.wf_Commit);
-        //        return listDocEntry;
-        //    }
-        //    catch
-        //    {
-        //        if (inTran && oCompany.InTransaction)
-        //            oCompany.EndTransaction(BoWfTransOpt.wf_RollBack);
-        //        throw;
-        //    }
-        //}
-
-        public static List<int> CreateProductionOrders(
-    IEnumerable<ProductionOrderModel> models,
-    HashSet<string> visited = null)
+        
+        public static List<int> CreateProductionOrders(IEnumerable<ProductionOrderModel> models,HashSet<string> visited = null)
         {
             if (models == null) throw new ArgumentNullException(nameof(models));
             if (visited == null) visited = new HashSet<string>();
