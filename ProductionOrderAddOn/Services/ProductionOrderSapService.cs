@@ -2,9 +2,6 @@
 using SAPbobsCOM;
 using System;
 using System.Collections.Generic;
-using System.Configuration;
-using System.Data.SqlClient;
-using Dapper;
 using System.Linq;
 using System.Runtime.InteropServices;
 
@@ -12,33 +9,32 @@ namespace ProductionOrderAddOn.Services
 {
     internal static class ProductionOrderSapService
     {
-        private static readonly string _connStr =
-        ConfigurationManager.ConnectionStrings["B1Connection"].ConnectionString;
-        
-        public static List<int> CreateProductionOrders(IEnumerable<ProductionOrderModel> models,HashSet<string> visited = null)
+        private static readonly Company oCompany = CompanyService.GetCompany();
+
+        public static List<int> CreateProductionOrdersRecursive(IEnumerable<ProductionOrderModel> models, HashSet<ProductionKey> visitedKeys = null)
         {
             if (models == null) throw new ArgumentNullException(nameof(models));
-            if (visited == null) visited = new HashSet<string>();
+            if (visitedKeys == null) visitedKeys = new HashSet<ProductionKey>();
 
             var allDocEntries = new List<int>();
 
-            // Filter model yang belum pernah diproses berdasarkan ProdNo
-            var batchModels = models.Where(m => visited.Add(m.ProdNo)).ToList();
-            if (batchModels.Count == 0) return allDocEntries;
+            // 🔍 Filter hanya model dengan kombinasi ProdNo + OrderDate yang belum diproses
+            var batchModels = models
+                .Where(m => visitedKeys.Add(new ProductionKey(m.ProdNo, m.OrderDate, m.RefProd)))
+                .ToList();
 
-            Company oCompany = CompanyService.GetCompany();
+            if (batchModels.Count == 0) return allDocEntries;
+            
             bool startedTran = false;
 
             try
             {
-                /* 1️⃣  Mulai transaksi SAP */
                 if (!oCompany.InTransaction)
                 {
                     oCompany.StartTransaction();
                     startedTran = true;
                 }
 
-                /* 2️⃣  Proses pembuatan PO */
                 foreach (var m in batchModels)
                 {
                     ProductionOrders po = null;
@@ -53,16 +49,15 @@ namespace ProductionOrderAddOn.Services
                         po.StartDate = m.OrderDate.Date;
                         po.DueDate = m.OrderDate.Date;
                         po.UserFields.Fields.Item("U_T2_PRODTYPE").Value = m.ProdType.ToString();
-                        if (m.RefProd != null)
-                        {
+
+                        if (!string.IsNullOrEmpty(m.RefProd))
                             po.UserFields.Fields.Item("U_T2_Ref_Production").Value = m.RefProd;
-                        }
 
                         int rc = po.Add();
                         if (rc != 0)
                         {
                             oCompany.GetLastError(out int errCode, out string errMsg);
-                            throw new Exception($"Failed to add production order ({errCode}): {errMsg}");
+                            throw new Exception($"Gagal membuat PO {m.ProdNo} ({errCode}): {errMsg}");
                         }
 
                         int docEntry = int.Parse(oCompany.GetNewObjectKey());
@@ -76,17 +71,13 @@ namespace ProductionOrderAddOn.Services
                     }
                 }
 
-                /* 3️⃣  Commit transaksi */
                 if (startedTran) oCompany.EndTransaction(BoWfTransOpt.wf_Commit);
 
-                /* 4️⃣  Ambil WIP dari hasil PO */
-                var wipModels = GetProductionOrders(allDocEntries)
-                                .ToList();
+                var wipModels = GetProductionOrders(allDocEntries).ToList();
 
-                /* 5️⃣  REKURSI untuk PO WIP */
                 if (wipModels.Count > 0)
                 {
-                    var subDocEntries = CreateProductionOrders(wipModels, visited);
+                    var subDocEntries = CreateProductionOrdersRecursive(wipModels, visitedKeys);
                     allDocEntries.AddRange(subDocEntries);
                 }
 
@@ -99,6 +90,7 @@ namespace ProductionOrderAddOn.Services
                 throw;
             }
         }
+
 
 
         public static void UpdatePoStatus(int docEntry, BoProductionOrderStatusEnum target)
@@ -135,37 +127,43 @@ namespace ProductionOrderAddOn.Services
             if (ids.Length == 0)
                 return new List<ProductionOrderModel>();
 
-            const string sql = @"
-                                SELECT
-                                    t0.DocEntry      AS RefProd,
-                                    t2.Code        AS ProdNo,
-                                    t2.ItemName    AS ProdDesc,
-                                    t3.PlannedQty  AS Qty,
-                                    CAST(t0.PostDate AS DATE) AS OrderDate
-                                FROM OWOR  t0
-                                INNER JOIN OITT t1 ON t0.ItemCode = t1.Code
-                                INNER JOIN ITT1 t2 ON t1.Code     = t2.Father
-                                INNER JOIN WOR1 t3 ON t3.DocEntry = t0.DocEntry
-                                                  AND t3.ItemCode = t2.Code
-                                WHERE t0.DocEntry IN @DocEntryList
-                                  AND ISNULL(t2.U_T2_ITEM_GROUP, '') = 'WIP'
-                                ORDER BY t0.PostDate DESC, t2.Code;";
+            string inClause = string.Join(", ", docEntries);
+
+            string sql = $@"
+                        SELECT
+                            t0.DocEntry      AS RefProd,
+                            t2.Code        AS ProdNo,
+                            t2.ItemName    AS ProdDesc,
+                            t3.PlannedQty  AS Qty,
+                            CAST(t0.PostDate AS DATE) AS OrderDate
+                        FROM OWOR  t0
+                        INNER JOIN OITT t1 ON t0.ItemCode = t1.Code
+                        INNER JOIN ITT1 t2 ON t1.Code     = t2.Father
+                        INNER JOIN WOR1 t3 ON t3.DocEntry = t0.DocEntry
+                                            AND t3.ItemCode = t2.Code
+                        WHERE t0.DocEntry IN ({inClause})
+                            AND ISNULL(t2.U_T2_ITEM_GROUP, '') = 'WIP'
+                        ORDER BY t0.PostDate DESC, t2.Code;";
 
             try
             {
-                using (var cn = new SqlConnection(_connStr))
+                var result = new List<ProductionOrderModel>();
+                var data = SapQueryHelper.ExecuteQuery(sql, oCompany);
+
+                foreach (var row in data)
                 {
-                    cn.Open();
-                    var result = cn.Query<ProductionOrderModel>(sql, new { DocEntryList = ids }).ToList();
-
-                    // Tandai semua sebagai WIP
-                    foreach (var item in result)
+                    result.Add(new ProductionOrderModel
                     {
-                        item.ProdType = ProductionType.WIP;
-                    }
-
-                    return result;
+                        RefProd = row["RefProd"].ToString(),
+                        ProdNo = row["ProdNo"].ToString(),
+                        ProdDesc = row["ProdDesc"].ToString(),
+                        Qty = Convert.ToDouble(row["Qty"]),
+                        OrderDate = Convert.ToDateTime(row["OrderDate"]),
+                        ProdType = ProductionType.WIP,
+                    });
                 }
+
+                return result;
             }
             catch (Exception ex)
             {
@@ -173,6 +171,49 @@ namespace ProductionOrderAddOn.Services
             }
         }
 
+        public static bool IsProdOrderExists(ProductionOrderModel model)
+        {
+            if (model == null)
+                throw new ArgumentNullException(nameof(model));
 
+            // Sanitize ProdNo dan format tanggal dengan benar
+            string prodNo = model.ProdNo.Replace("'", "''"); // untuk hindari SQL injection
+            string dateStr = model.OrderDate.ToString("yyyy-MM-dd");
+
+            string sql = $@"
+                SELECT TOP 1 T0.DocEntry
+                FROM OWOR T0
+                WHERE T0.ItemCode = '{prodNo}'
+                AND CAST(T0.PostDate AS DATE) = '{dateStr}'";
+
+            try
+            {
+                var result = SapQueryHelper.ExecuteQuery(sql, oCompany);
+                return result.Count > 0;
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Error while validating production orders: " + ex.Message, ex);
+            }
+        }
+
+
+
+        public static void Test()
+        {
+            var oCompany = CompanyService.GetCompany();
+            var recordset = (SAPbobsCOM.Recordset)oCompany.GetBusinessObject(SAPbobsCOM.BoObjectTypes.BoRecordset);
+
+            recordset.DoQuery("SELECT ItemCode, ItemName FROM OITM");
+
+            while (!recordset.EoF)
+            {
+                string itemCode = recordset.Fields.Item("ItemCode").Value.ToString();
+                string itemName = recordset.Fields.Item("ItemName").Value.ToString();
+                Console.WriteLine($"{itemCode} - {itemName}");
+                recordset.MoveNext();
+            }
+
+        }
     }
 }

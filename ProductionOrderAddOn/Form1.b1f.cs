@@ -29,6 +29,8 @@ namespace ProductionOrderAddOn
         private string fileName;
         private static SAPbouiCOM.ProgressBar _pb;
         private static bool _userCanceled = false;
+        private SAPbouiCOM.Button BtnRefresh;
+        private SAPbouiCOM.Button BtnReset;
 
         public ImportForm()
         {
@@ -49,11 +51,16 @@ namespace ProductionOrderAddOn
             this.GridData = ((SAPbouiCOM.Grid)(this.GetItem("GridData").Specific));
             this.LblPath = ((SAPbouiCOM.StaticText)(this.GetItem("LblPath").Specific));
             this.TxtPath = ((SAPbouiCOM.EditText)(this.GetItem("TxtPath").Specific));
+            this.TxtPath.KeyDownAfter += new SAPbouiCOM._IEditTextEvents_KeyDownAfterEventHandler(this.TxtPath_KeyDownAfter);
             this.BtnBrowse = ((SAPbouiCOM.Button)(this.GetItem("BtnBrowse").Specific));
             this.BtnBrowse.ClickBefore += new SAPbouiCOM._IButtonEvents_ClickBeforeEventHandler(this.BtnBrowse_ClickBefore);
-            this.TxtFrom.ValidateAfter += new SAPbouiCOM._IEditTextEvents_ValidateAfterEventHandler(this.DateRangeValidation);
-            this.TxtTo.ValidateAfter += new SAPbouiCOM._IEditTextEvents_ValidateAfterEventHandler(this.DateRangeValidation);
-            Application.SBO_Application.ProgressBarEvent += new SAPbouiCOM._IApplicationEvents_ProgressBarEventEventHandler(OnProgressBarEvent);
+            this.TxtFrom.ValidateAfter += new SAPbouiCOM._IEditTextEvents_ValidateAfterEventHandler(this.DateValidateAfter);
+            this.TxtTo.ValidateAfter += new SAPbouiCOM._IEditTextEvents_ValidateAfterEventHandler(this.DateValidateAfter);
+            this.BtnRefresh = ((SAPbouiCOM.Button)(this.GetItem("BtnRefresh").Specific));
+            this.BtnRefresh.ClickBefore += new SAPbouiCOM._IButtonEvents_ClickBeforeEventHandler(this.BtnRefresh_ClickBefore);
+            this.BtnReset = ((SAPbouiCOM.Button)(this.GetItem("BtnReset").Specific));
+            this.BtnReset.ClickBefore += new SAPbouiCOM._IButtonEvents_ClickBeforeEventHandler(this.BtnReset_ClickBefore);
+            Application.SBO_Application.ProgressBarEvent += new SAPbouiCOM._IApplicationEvents_ProgressBarEventEventHandler(this.OnProgressBarEvent);
             this.OnCustomInitialize();
 
         }
@@ -71,25 +78,92 @@ namespace ProductionOrderAddOn
         {
 
         }
-        
+
+        #region Events
         private void Form_LoadAfter(SAPbouiCOM.SBOItemEventArg pVal)
         {
-            //throw new System.NotImplementedException();
-            //try
-            //{
-            //    SAPbobsCOM.Company oCompany = CompanyService.GetCompany();
-            //    if (oCompany.Connected)
-            //    {
-            //        Application.SBO_Application.MessageBox("Connection Succes");
-            //    }
-            //}
-            //catch (Exception)
-            //{
-            //    Application.SBO_Application.MessageBox("Connection Fail");
-            //}
+            
 
         }
 
+        private void TxtPath_KeyDownAfter(object sboObject, SAPbouiCOM.SBOItemEventArg pVal)
+        {
+            if (!string.IsNullOrEmpty(TxtPath.Value))
+            {
+                fileName = TxtPath.Value;
+            }
+        }
+
+        private void BtnImport_ClickBefore(object sboObject, SAPbouiCOM.SBOItemEventArg pVal, out bool BubbleEvent)
+        {
+            BubbleEvent = true;
+            try
+            {
+                if (!this.ImportFromExcelProdOrder())
+                {
+                    ClearDataModel();
+                }
+                else
+                {
+                    this.SetDataGrid();
+                    if(this.ImportToSAP())
+                        this.Reset();
+                }
+            }
+            catch (Exception ex)
+            {
+                Application.SBO_Application.StatusBar.SetText(ex.Message, SAPbouiCOM.BoMessageTime.bmt_Short, SAPbouiCOM.BoStatusBarMessageType.smt_Error);
+            }
+        }
+
+        private void BtnBrowse_ClickBefore(object sboObject, SAPbouiCOM.SBOItemEventArg pVal, out bool BubbleEvent)
+        {
+            BubbleEvent = true;
+            HandleBrowse();
+        }
+
+        private void OnProgressBarEvent(ref SAPbouiCOM.ProgressBarEvent pVal, out bool BubbleEvent)
+        {
+            BubbleEvent = true;
+            if (pVal.EventType == SAPbouiCOM.BoProgressBarEventTypes.pbet_ProgressBarStopped &&
+                pVal.BeforeAction)
+                _userCanceled = true;
+        }
+
+        private void DateValidateAfter(object sboObject, SAPbouiCOM.SBOItemEventArg pVal)
+        {
+            DateRangeValidation(pVal);
+            //OnChangeDate(pVal);
+        }
+
+        private void BtnRefresh_ClickBefore(object sboObject, SAPbouiCOM.SBOItemEventArg pVal, out bool BubbleEvent)
+        {
+            BubbleEvent = true;
+            try
+            {
+                if (!this.ImportFromExcelProdOrder())
+                    ClearDataModel();
+                else
+                    this.SetDataGrid();
+            }
+            catch (Exception ex)
+            {
+                Application.SBO_Application.StatusBar.SetText(ex.Message,
+                    SAPbouiCOM.BoMessageTime.bmt_Short,
+                    SAPbouiCOM.BoStatusBarMessageType.smt_Error);
+            }
+        }
+
+        private void BtnReset_ClickBefore(object sboObject, SAPbouiCOM.SBOItemEventArg pVal, out bool BubbleEvent)
+        {
+            BubbleEvent = true;
+            Reset();
+            ProductionOrderSapService.Test();
+        }
+
+        #endregion
+
+        #region Functions
         private void StartProgressBar(string title)
         {
             _pb = Application.SBO_Application.StatusBar
@@ -111,38 +185,26 @@ namespace ProductionOrderAddOn
             _userCanceled = false;
         }
 
-
-        private void BtnImport_ClickBefore(object sboObject, SAPbouiCOM.SBOItemEventArg pVal, out bool BubbleEvent)
-        {
-            BubbleEvent = true;
-            try
-            {
-                this.ImportToSAP();
-            }
-            catch (Exception ex)
-            {
-                Application.SBO_Application.StatusBar.SetText(ex.Message, SAPbouiCOM.BoMessageTime.bmt_Short, SAPbouiCOM.BoStatusBarMessageType.smt_Error);
-            }
-        }
-
-        private void BtnBrowse_ClickBefore(object sboObject, SAPbouiCOM.SBOItemEventArg pVal, out bool BubbleEvent)
-        {
-            BubbleEvent = true;
-            HandleBrowse();
-        }
-
         private void HandleBrowse()
         {
             try
             {
-                this.GetPathFile();
-                this.ImportFromExcelProdOrder();
-                this.SetDataGrid();
+                if (this.GetPathFile())
+                {
+                    if (!this.ImportFromExcelProdOrder())
+                    {
+                        ClearDataModel();
+                    }
+                    else
+                    {
+                        this.SetDataGrid();
 
-                Application.SBO_Application.StatusBar.SetText(
-                    "Data imported successfully.",
-                    SAPbouiCOM.BoMessageTime.bmt_Short,
-                    SAPbouiCOM.BoStatusBarMessageType.smt_Success);
+                        Application.SBO_Application.StatusBar.SetText(
+                            "Data imported successfully.",
+                            SAPbouiCOM.BoMessageTime.bmt_Short,
+                            SAPbouiCOM.BoStatusBarMessageType.smt_Success);
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -151,19 +213,10 @@ namespace ProductionOrderAddOn
                     SAPbouiCOM.BoMessageTime.bmt_Short,
                     SAPbouiCOM.BoStatusBarMessageType.smt_Error);
             }
-            
+
         }
 
-
-        private static void OnProgressBarEvent(ref SAPbouiCOM.ProgressBarEvent pVal, out bool BubbleEvent)
-        {
-            BubbleEvent = true;
-            if (pVal.EventType == SAPbouiCOM.BoProgressBarEventTypes.pbet_ProgressBarStopped &&
-                pVal.BeforeAction)
-                _userCanceled = true;
-        }
-
-        private void DateRangeValidation(object sboObject, SAPbouiCOM.SBOItemEventArg pVal)
+        private void DateRangeValidation(SAPbouiCOM.SBOItemEventArg pVal)
         {
             DateTime? from = ParseDate_yyyyMMdd(TxtFrom.Value);
             DateTime? to = ParseDate_yyyyMMdd(TxtTo.Value);
@@ -186,8 +239,9 @@ namespace ProductionOrderAddOn
             }
         }
 
-        private void GetPathFile()
+        private bool GetPathFile()
         {
+            bool res = false;
             try
             {
                 StartProgressBar("Get file path");
@@ -210,7 +264,14 @@ namespace ProductionOrderAddOn
                         dummyForm.Hide();
 
                         if (dialog.ShowDialog(dummyForm) == System.Windows.Forms.DialogResult.OK)
+                        {
                             fileName = dialog.FileName;
+                            res = true;
+                        }
+                        else
+                        {
+                            res = false;
+                        }
                     }
                 });
 
@@ -219,6 +280,7 @@ namespace ProductionOrderAddOn
                 t.Join();
 
                 TxtPath.Value = fileName ?? "";
+                return res;
             }
             catch
             {
@@ -230,29 +292,29 @@ namespace ProductionOrderAddOn
             }
         }
 
-
-        private void ImportFromExcelProdOrder()
+        private bool ImportFromExcelProdOrder()
         {
+            bool res = false;
             try
             {
                 StartProgressBar("Importing data");
-                
+
                 string fromStr = TxtFrom.Value;
                 string toStr = TxtTo.Value;
 
                 DateTime? fromDate = ParseDate_yyyyMMdd(fromStr);
 
                 DateTime? toDate = ParseDate_yyyyMMdd(toStr);
-                
+
                 if (string.IsNullOrEmpty(fileName)) throw new Exception("Please select file to import");
 
                 // Panggil import service
                 this.listData = ExcelImportService.ImportProductionOrders(fileName, fromDate, toDate);
                 
-
                 if (!this.listData.Any())
                     throw new Exception("Data not found");
-                
+                res = true;
+                return res;
             }
             catch (Exception)
             {
@@ -264,8 +326,7 @@ namespace ProductionOrderAddOn
             }
         }
 
-
-        private void ImportToSAP()
+        private bool ImportToSAP()
         {
             try
             {
@@ -278,28 +339,38 @@ namespace ProductionOrderAddOn
                     1, "Yes", "No", "");
 
                 if (result != 1)
-                    return;
-                
+                    return false;
+
                 StartProgressBar("Importing data to SAP");
 
                 if (listData == null || listData.Count == 0)
-                    this.ImportFromExcelProdOrder();
+                    if (!this.ImportFromExcelProdOrder())
+                        ClearDataModel();
+
 
                 if (listData == null || listData.Count == 0)
                     throw new Exception("No data found in the selected file.");
 
+                foreach (var item in listData)
+                {
+                    if (ProductionOrderSapService.IsProdOrderExists(item))
+                    {
+                        throw new Exception($"A Production Order for item '{item.ProdNo}' already exists on {item.OrderDate:dddd, dd MMMM yyyy}.");
+
+                    }
+                }
+
                 // 🌟 Satu baris rekursif → membuat semua PO hingga WIP selesai
-                List<int> allDocEntries = ProductionOrderSapService.CreateProductionOrders(listData);
+                List<int> allDocEntries = ProductionOrderSapService.CreateProductionOrdersRecursive(listData);
 
                 if (allDocEntries == null || allDocEntries.Count == 0)
                     throw new Exception("No production orders were created in SAP.");
 
                 Application.SBO_Application.StatusBar.SetText(
-                    "All records have been successfully imported into SAP..",
+                    "All records have been successfully imported into SAP.",
                     SAPbouiCOM.BoMessageTime.bmt_Short,
                     SAPbouiCOM.BoStatusBarMessageType.smt_Success);
-
-                this.Reset();
+                return true;
             }
             catch (Exception ex)
             {
@@ -313,8 +384,17 @@ namespace ProductionOrderAddOn
                 StopProgressBar();
             }
         }
-        
+
         private void Reset()
+        {
+            ClearDataModel();
+            this.TxtFrom.Value = string.Empty;
+            this.TxtTo.Value = string.Empty;
+            this.fileName = string.Empty;
+            this.TxtPath.Value = string.Empty;
+        }
+
+        private void ClearDataModel()
         {
             if (listData != null) this.listData.Clear();
             if (dt != null)
@@ -322,14 +402,8 @@ namespace ProductionOrderAddOn
                 this.dt.Clear();
                 this.GridData.DataTable.Clear();
             }
-            this.fileName = String.Empty;
-            this.TxtPath.Value = String.Empty;
         }
-        
-        /// <summary>
-        /// Membuat DataTable baru (jika belum ada) ATAU
-        /// membersihkan baris lama, lalu mengisi ulang dengan 'data'.
-        /// </summary>
+
         private void BuildOrResetDataTable(SAPbouiCOM.IForm oForm)
         {
             try
@@ -359,7 +433,7 @@ namespace ProductionOrderAddOn
             }
 
             int white = System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.White);
-            
+
             GridData.DataTable = dt;
             GridData.AutoResizeColumns();
             for (int i = 0; i < GridData.Columns.Count; i++)
@@ -378,7 +452,6 @@ namespace ProductionOrderAddOn
             }
         }
 
-
         private void SetDataGrid()
         {
             var oForm = this.UIAPIRawForm;
@@ -389,7 +462,7 @@ namespace ProductionOrderAddOn
                 if (listData != null)
                 {
                     StartProgressBar("Refreshing data table");
-                    
+
                     BuildOrResetDataTable(oForm); // isi dt & bind ke GridData
                     GridData.AutoResizeColumns();
 
@@ -412,13 +485,12 @@ namespace ProductionOrderAddOn
 
         bool _sortHandlerAdded = false;
 
-
         private void SetRowNumber()
         {
             var grid = this.GridData;
             grid.RowHeaders.TitleObject.Caption = "#";    // judul kolom
             grid.RowHeaders.Width = 30;                   // lebar (pixel) — sesuaikan
-            
+
             int rowCount = grid.DataTable.Rows.Count;
             for (int i = 0; i < rowCount; i++)
             {
@@ -438,6 +510,6 @@ namespace ProductionOrderAddOn
                    ? (DateTime?)dt
                    : null;
         }
-        
+        #endregion
     }
 }

@@ -107,6 +107,10 @@ namespace ProductionOrderAddOn.Services
                             }
                         }
                     }
+                    if (results.Any())
+                    {
+                        results = results.OrderBy(r => r.OrderDate).ToList();
+                    }
                 }
             }
             catch (Exception ex)
