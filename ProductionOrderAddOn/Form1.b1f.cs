@@ -26,7 +26,7 @@ namespace ProductionOrderAddOn
         private SAPbouiCOM.StaticText LblPath;
         private SAPbouiCOM.EditText TxtPath;
         private SAPbouiCOM.Button BtnBrowse;
-        private string fileName;
+        private string FilePath;
         private static SAPbouiCOM.ProgressBar _pb;
         private static bool _userCanceled = false;
         private SAPbouiCOM.Button BtnRefresh;
@@ -82,7 +82,6 @@ namespace ProductionOrderAddOn
         #region Events
         private void Form_LoadAfter(SAPbouiCOM.SBOItemEventArg pVal)
         {
-            
 
         }
 
@@ -90,7 +89,7 @@ namespace ProductionOrderAddOn
         {
             if (!string.IsNullOrEmpty(TxtPath.Value))
             {
-                fileName = TxtPath.Value;
+                FilePath = TxtPath.Value;
             }
         }
 
@@ -141,10 +140,13 @@ namespace ProductionOrderAddOn
             BubbleEvent = true;
             try
             {
-                if (!this.ImportFromExcelProdOrder())
-                    ClearDataModel();
-                else
-                    this.SetDataGrid();
+                if (!string.IsNullOrEmpty(FilePath))
+                {
+                    if (!this.ImportFromExcelProdOrder())
+                        ClearDataModel();
+                    else
+                        this.SetDataGrid();
+                }
             }
             catch (Exception ex)
             {
@@ -158,7 +160,6 @@ namespace ProductionOrderAddOn
         {
             BubbleEvent = true;
             Reset();
-            ProductionOrderSapService.Test();
         }
 
         #endregion
@@ -265,7 +266,7 @@ namespace ProductionOrderAddOn
 
                         if (dialog.ShowDialog(dummyForm) == System.Windows.Forms.DialogResult.OK)
                         {
-                            fileName = dialog.FileName;
+                            FilePath = dialog.FileName;
                             res = true;
                         }
                         else
@@ -279,7 +280,7 @@ namespace ProductionOrderAddOn
                 t.Start();
                 t.Join();
 
-                TxtPath.Value = fileName ?? "";
+                TxtPath.Value = FilePath ?? "";
                 return res;
             }
             catch
@@ -306,10 +307,10 @@ namespace ProductionOrderAddOn
 
                 DateTime? toDate = ParseDate_yyyyMMdd(toStr);
 
-                if (string.IsNullOrEmpty(fileName)) throw new Exception("Please select file to import");
+                if (string.IsNullOrEmpty(FilePath)) throw new Exception("Please select file to import");
 
                 // Panggil import service
-                this.listData = ExcelImportService.ImportProductionOrders(fileName, fromDate, toDate);
+                this.listData = ExcelImportService.ImportProductionOrders(FilePath, fromDate, toDate);
                 
                 if (!this.listData.Any())
                     throw new Exception("Data not found");
@@ -331,7 +332,7 @@ namespace ProductionOrderAddOn
             try
             {
 
-                if (string.IsNullOrEmpty(this.fileName))
+                if (string.IsNullOrEmpty(this.FilePath))
                     throw new Exception("Please select a file to import.");
 
                 int result = Application.SBO_Application.MessageBox(
@@ -360,8 +361,10 @@ namespace ProductionOrderAddOn
                     }
                 }
 
+                string fileName = System.IO.Path.GetFileName(FilePath);
+
                 // 🌟 Satu baris rekursif → membuat semua PO hingga WIP selesai
-                List<int> allDocEntries = ProductionOrderSapService.CreateProductionOrdersRecursive(listData);
+                List<int> allDocEntries = ProductionOrderSapService.CreateProductionOrdersRecursive(fileName,listData);
 
                 if (allDocEntries == null || allDocEntries.Count == 0)
                     throw new Exception("No production orders were created in SAP.");
@@ -390,7 +393,7 @@ namespace ProductionOrderAddOn
             ClearDataModel();
             this.TxtFrom.Value = string.Empty;
             this.TxtTo.Value = string.Empty;
-            this.fileName = string.Empty;
+            this.FilePath = string.Empty;
             this.TxtPath.Value = string.Empty;
         }
 
@@ -510,6 +513,7 @@ namespace ProductionOrderAddOn
                    ? (DateTime?)dt
                    : null;
         }
+
         #endregion
     }
 }

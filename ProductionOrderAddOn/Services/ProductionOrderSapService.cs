@@ -1,4 +1,5 @@
-﻿using ProductionOrderAddOn.Models;
+﻿using ProductionOrderAddOn.Helpers;
+using ProductionOrderAddOn.Models;
 using SAPbobsCOM;
 using System;
 using System.Collections.Generic;
@@ -11,7 +12,7 @@ namespace ProductionOrderAddOn.Services
     {
         private static readonly Company oCompany = CompanyService.GetCompany();
 
-        public static List<int> CreateProductionOrdersRecursive(IEnumerable<ProductionOrderModel> models, HashSet<ProductionKey> visitedKeys = null)
+        public static List<int> CreateProductionOrdersRecursive(string fileName, IEnumerable<ProductionOrderModel> models, HashSet<ProductionKey> visitedKeys = null)
         {
             if (models == null) throw new ArgumentNullException(nameof(models));
             if (visitedKeys == null) visitedKeys = new HashSet<ProductionKey>();
@@ -20,7 +21,7 @@ namespace ProductionOrderAddOn.Services
 
             // 🔍 Filter hanya model dengan kombinasi ProdNo + OrderDate yang belum diproses
             var batchModels = models
-                .Where(m => visitedKeys.Add(new ProductionKey(m.ProdNo, m.OrderDate, m.RefProd)))
+                .Where(m => visitedKeys.Add(new ProductionKey(m.ProdNo, m.OrderDate, m.RefProdEntry)))
                 .ToList();
 
             if (batchModels.Count == 0) return allDocEntries;
@@ -49,10 +50,15 @@ namespace ProductionOrderAddOn.Services
                         po.StartDate = m.OrderDate.Date;
                         po.DueDate = m.OrderDate.Date;
                         po.UserFields.Fields.Item("U_T2_PRODTYPE").Value = m.ProdType.ToString();
+                        po.Remarks = $"Imported from file {fileName}";
 
-                        if (!string.IsNullOrEmpty(m.RefProd))
-                            po.UserFields.Fields.Item("U_T2_Ref_Production").Value = m.RefProd;
-
+                        if (!string.IsNullOrEmpty(m.RefProdEntry))
+                            po.UserFields.Fields.Item("U_T2_Ref_Production").Value = m.RefProdEntry;
+                        if (!string.IsNullOrEmpty(m.RefProdEntry))
+                            po.UserFields.Fields.Item("U_T2_Ref_Prod_DocNum").Value = m.RefProdNum;
+                        if (!string.IsNullOrEmpty(m.RefProdEntry))
+                            po.UserFields.Fields.Item("U_T2_Is_Import").Value = "Y";
+                        
                         int rc = po.Add();
                         if (rc != 0)
                         {
@@ -77,7 +83,7 @@ namespace ProductionOrderAddOn.Services
 
                 if (wipModels.Count > 0)
                 {
-                    var subDocEntries = CreateProductionOrdersRecursive(wipModels, visitedKeys);
+                    var subDocEntries = CreateProductionOrdersRecursive(fileName,wipModels, visitedKeys);
                     allDocEntries.AddRange(subDocEntries);
                 }
 
@@ -131,7 +137,8 @@ namespace ProductionOrderAddOn.Services
 
             string sql = $@"
                         SELECT
-                            t0.DocEntry      AS RefProd,
+                            t0.DocEntry      AS RefProdEntry,
+                            t0.DocNum      AS RefProdNum,
                             t2.Code        AS ProdNo,
                             t2.ItemName    AS ProdDesc,
                             t3.PlannedQty  AS Qty,
@@ -154,7 +161,8 @@ namespace ProductionOrderAddOn.Services
                 {
                     result.Add(new ProductionOrderModel
                     {
-                        RefProd = row["RefProd"].ToString(),
+                        RefProdEntry = row["RefProdEntry"].ToString(),
+                        RefProdNum = row["RefProdNum"].ToString(),
                         ProdNo = row["ProdNo"].ToString(),
                         ProdDesc = row["ProdDesc"].ToString(),
                         Qty = Convert.ToDouble(row["Qty"]),
@@ -195,25 +203,6 @@ namespace ProductionOrderAddOn.Services
             {
                 throw new Exception("Error while validating production orders: " + ex.Message, ex);
             }
-        }
-
-
-
-        public static void Test()
-        {
-            var oCompany = CompanyService.GetCompany();
-            var recordset = (SAPbobsCOM.Recordset)oCompany.GetBusinessObject(SAPbobsCOM.BoObjectTypes.BoRecordset);
-
-            recordset.DoQuery("SELECT ItemCode, ItemName FROM OITM");
-
-            while (!recordset.EoF)
-            {
-                string itemCode = recordset.Fields.Item("ItemCode").Value.ToString();
-                string itemName = recordset.Fields.Item("ItemName").Value.ToString();
-                Console.WriteLine($"{itemCode} - {itemName}");
-                recordset.MoveNext();
-            }
-
         }
     }
 }

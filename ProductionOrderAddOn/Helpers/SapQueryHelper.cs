@@ -1,15 +1,8 @@
-﻿using System;
+﻿using SAPbobsCOM;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace ProductionOrderAddOn
+namespace ProductionOrderAddOn.Helpers
 {
-    using SAPbobsCOM;
-    using System;
-    using System.Collections.Generic;
-
     public static class SapQueryHelper
     {
         public static List<Dictionary<string, object>> ExecuteQuery(string sql, Company company)
