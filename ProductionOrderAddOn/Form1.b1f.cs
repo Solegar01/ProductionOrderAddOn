@@ -15,23 +15,23 @@ namespace ProductionOrderAddOn
     class ImportForm : UserFormBase
     {
         private SAPbouiCOM.EditText TxtFrom;
+        private SAPbouiCOM.EditText TxtTo;
+        private SAPbouiCOM.EditText TxtPath;
         private SAPbouiCOM.StaticText LblDateFrom;
         private SAPbouiCOM.StaticText LblDateTo;
-        private SAPbouiCOM.EditText TxtTo;
         private SAPbouiCOM.Button BtnImport;
         private List<ProductionOrderModel> listData;
         const string DT_NAME = "DT_IMPORT";
         SAPbouiCOM.DataTable dt;
         private SAPbouiCOM.Grid GridData;
         private SAPbouiCOM.StaticText LblPath;
-        private SAPbouiCOM.EditText TxtPath;
         private SAPbouiCOM.Button BtnBrowse;
         private string FilePath;
         private static SAPbouiCOM.ProgressBar _pb;
         private static bool _userCanceled = false;
         private SAPbouiCOM.Button BtnRefresh;
         private SAPbouiCOM.Button BtnReset;
-
+        
         public ImportForm()
         {
         }
@@ -42,16 +42,16 @@ namespace ProductionOrderAddOn
 
         public override void OnInitializeComponent()
         {
+            this.LblPath = ((SAPbouiCOM.StaticText)(this.GetItem("LblPath").Specific));
+            this.TxtPath = ((SAPbouiCOM.EditText)(this.GetItem("TxtPath").Specific));
             this.TxtFrom = ((SAPbouiCOM.EditText)(this.GetItem("TxtFrom").Specific));
+            this.TxtTo = ((SAPbouiCOM.EditText)(this.GetItem("TxtTo").Specific));
+            this.TxtPath.KeyDownAfter += new SAPbouiCOM._IEditTextEvents_KeyDownAfterEventHandler(this.TxtPath_KeyDownAfter);
             this.LblDateFrom = ((SAPbouiCOM.StaticText)(this.GetItem("LblFrom").Specific));
             this.LblDateTo = ((SAPbouiCOM.StaticText)(this.GetItem("LblTo").Specific));
-            this.TxtTo = ((SAPbouiCOM.EditText)(this.GetItem("TxtTo").Specific));
             this.BtnImport = ((SAPbouiCOM.Button)(this.GetItem("BtnImport").Specific));
             this.BtnImport.ClickBefore += new SAPbouiCOM._IButtonEvents_ClickBeforeEventHandler(this.BtnImport_ClickBefore);
             this.GridData = ((SAPbouiCOM.Grid)(this.GetItem("GridData").Specific));
-            this.LblPath = ((SAPbouiCOM.StaticText)(this.GetItem("LblPath").Specific));
-            this.TxtPath = ((SAPbouiCOM.EditText)(this.GetItem("TxtPath").Specific));
-            this.TxtPath.KeyDownAfter += new SAPbouiCOM._IEditTextEvents_KeyDownAfterEventHandler(this.TxtPath_KeyDownAfter);
             this.BtnBrowse = ((SAPbouiCOM.Button)(this.GetItem("BtnBrowse").Specific));
             this.BtnBrowse.ClickBefore += new SAPbouiCOM._IButtonEvents_ClickBeforeEventHandler(this.BtnBrowse_ClickBefore);
             this.TxtFrom.ValidateAfter += new SAPbouiCOM._IEditTextEvents_ValidateAfterEventHandler(this.DateValidateAfter);
@@ -60,7 +60,7 @@ namespace ProductionOrderAddOn
             this.BtnRefresh.ClickBefore += new SAPbouiCOM._IButtonEvents_ClickBeforeEventHandler(this.BtnRefresh_ClickBefore);
             this.BtnReset = ((SAPbouiCOM.Button)(this.GetItem("BtnReset").Specific));
             this.BtnReset.ClickBefore += new SAPbouiCOM._IButtonEvents_ClickBeforeEventHandler(this.BtnReset_ClickBefore);
-            Application.SBO_Application.ProgressBarEvent += new SAPbouiCOM._IApplicationEvents_ProgressBarEventEventHandler(this.OnProgressBarEvent);
+            SAPbouiCOM.Framework.Application.SBO_Application.ProgressBarEvent += new SAPbouiCOM._IApplicationEvents_ProgressBarEventEventHandler(this.OnProgressBarEvent);
             this.OnCustomInitialize();
 
         }
@@ -329,6 +329,7 @@ namespace ProductionOrderAddOn
 
         private bool ImportToSAP()
         {
+            bool success = false;
             try
             {
 
@@ -368,12 +369,8 @@ namespace ProductionOrderAddOn
 
                 if (allDocEntries == null || allDocEntries.Count == 0)
                     throw new Exception("No production orders were created in SAP.");
-
-                Application.SBO_Application.StatusBar.SetText(
-                    "All records have been successfully imported into SAP.",
-                    SAPbouiCOM.BoMessageTime.bmt_Short,
-                    SAPbouiCOM.BoStatusBarMessageType.smt_Success);
-                return true;
+                success = true;
+                return success;
             }
             catch (Exception ex)
             {
@@ -385,6 +382,17 @@ namespace ProductionOrderAddOn
             finally
             {
                 StopProgressBar();
+                if (success)
+                {
+                    System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+                    {
+                        System.Threading.Thread.Sleep(500); // Delay agar SAP selesai menampilkan pesan
+                        Application.SBO_Application.StatusBar.SetText(
+                        "All records have been successfully imported into SAP.",
+                        SAPbouiCOM.BoMessageTime.bmt_Short,
+                        SAPbouiCOM.BoStatusBarMessageType.smt_Success);
+                    });
+                }
             }
         }
 

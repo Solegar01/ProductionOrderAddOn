@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using ProductionOrderAddOn.Services;
 using SAPbouiCOM.Framework;
 
 namespace ProductionOrderAddOn
@@ -24,6 +25,7 @@ namespace ProductionOrderAddOn
             oCreationPackage.Enabled = true;
             oCreationPackage.Position = -1;
 
+            Application.SBO_Application.FormDataEvent += OnFormDataEvent;
             oMenus = oMenuItem.SubMenus;
 
             try
@@ -72,5 +74,36 @@ namespace ProductionOrderAddOn
             }
         }
 
+        private void OnFormDataEvent(ref SAPbouiCOM.BusinessObjectInfo bi, out bool bubbleEvent)
+        {
+            bubbleEvent = true;
+            // GRPO (FormType 143) selesai disimpan
+            if (bi.FormTypeEx == "169" &&
+                !bi.BeforeAction &&
+                bi.EventType == SAPbouiCOM.BoEventTypes.et_FORM_DATA_ADD &&
+                bi.ActionSuccess)
+            {
+                bool success = false;
+                try
+                {
+                    
+                    success = true;
+                }
+                catch (OperationCanceledException)
+                {
+                    Application.SBO_Application.StatusBar.SetText(
+                        "Process cancelled by user.",
+                        SAPbouiCOM.BoMessageTime.bmt_Short,
+                        SAPbouiCOM.BoStatusBarMessageType.smt_Warning);
+                }
+                catch (Exception ex)
+                {
+                    Application.SBO_Application.StatusBar.SetText(
+                        "Error Auto GI/GR: " + ex.Message,
+                        SAPbouiCOM.BoMessageTime.bmt_Long,
+                        SAPbouiCOM.BoStatusBarMessageType.smt_Error);
+                }
+            }
+        }
     }
 }

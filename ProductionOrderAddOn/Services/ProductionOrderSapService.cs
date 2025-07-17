@@ -51,13 +51,12 @@ namespace ProductionOrderAddOn.Services
                         po.DueDate = m.OrderDate.Date;
                         po.UserFields.Fields.Item("U_T2_PRODTYPE").Value = m.ProdType.ToString();
                         po.Remarks = $"Imported from file {fileName}";
+                        po.UserFields.Fields.Item("U_T2_Is_Import").Value = "Y";
 
                         if (!string.IsNullOrEmpty(m.RefProdEntry))
                             po.UserFields.Fields.Item("U_T2_Ref_Production").Value = m.RefProdEntry;
                         if (!string.IsNullOrEmpty(m.RefProdEntry))
                             po.UserFields.Fields.Item("U_T2_Ref_Prod_DocNum").Value = m.RefProdNum;
-                        if (!string.IsNullOrEmpty(m.RefProdEntry))
-                            po.UserFields.Fields.Item("U_T2_Is_Import").Value = "Y";
                         
                         int rc = po.Add();
                         if (rc != 0)
