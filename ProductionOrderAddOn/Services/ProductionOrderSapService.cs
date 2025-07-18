@@ -50,8 +50,11 @@ namespace ProductionOrderAddOn.Services
                         po.StartDate = m.OrderDate.Date;
                         po.DueDate = m.OrderDate.Date;
                         po.UserFields.Fields.Item("U_T2_PRODTYPE").Value = m.ProdType.ToString();
-                        po.Remarks = $"Imported from file {fileName}";
-                        po.UserFields.Fields.Item("U_T2_Is_Import").Value = "Y";
+                        if (!string.IsNullOrEmpty(fileName))
+                        {
+                            po.Remarks = $"Imported from file {fileName}";
+                            po.UserFields.Fields.Item("U_T2_Is_Import").Value = "Y";
+                        }
 
                         if (!string.IsNullOrEmpty(m.RefProdEntry))
                             po.UserFields.Fields.Item("U_T2_Ref_Production").Value = m.RefProdEntry;
@@ -95,9 +98,7 @@ namespace ProductionOrderAddOn.Services
                 throw;
             }
         }
-
-
-
+        
         public static void UpdatePoStatus(int docEntry, BoProductionOrderStatusEnum target)
         {
             Company oCompany = CompanyService.GetCompany();
@@ -121,8 +122,7 @@ namespace ProductionOrderAddOn.Services
                     $"Failed to update status Production Order ({errCode}) {errMsg}");
             }
         }
-
-
+        
         public static List<ProductionOrderModel> GetProductionOrders(IEnumerable<int> docEntries)
         {
             if (docEntries == null)
@@ -203,5 +203,101 @@ namespace ProductionOrderAddOn.Services
                 throw new Exception("Error while validating production orders: " + ex.Message, ex);
             }
         }
+
+        public static List<string> GenerateSubOrder(int docEntry, Action<int, int> onProgress = null)
+        {
+            List<string> resultEntries = new List<string>();
+            List<int> listEntries = new List<int>();
+
+            try
+            {
+                List<int> docEntries = new List<int> { docEntry };
+                var wipModels = GetProductionOrders(docEntries).ToList();
+
+                int total = wipModels.Count;
+                int current = 0;
+
+                if (total > 0)
+                {
+                    foreach (var wip in wipModels)
+                    {
+                        var subDocs = CreateProductionOrdersRecursive("", wipModels);
+                        listEntries.AddRange(subDocs);
+
+                        current++;
+                        onProgress?.Invoke(current, total); // 👈 Callback progress
+                    }
+                }
+
+                if (listEntries.Any())
+                {
+                    resultEntries = GetDocNum(listEntries);
+                }
+
+                return resultEntries;
+            }
+            catch (Exception)
+            {
+                throw;
+            }
+        }
+
+
+        public static List<string> GetDocNum(List<int> docEntries)
+        {
+            List<string> result = new List<string>();
+            string inClause = string.Join(", ", docEntries);
+
+            string sql = $@"
+                    SELECT 
+                        W.DocNum AS DocNum
+                    FROM 
+                        OWOR W
+                        INNER JOIN NNM1 N ON W.Series = N.Series
+                    WHERE 
+                        W.DocEntry IN ({inClause})
+                    ORDER BY 
+                        W.DocNum DESC
+                    ";
+            try
+            {
+                var data = SapQueryHelper.ExecuteQuery(sql, oCompany);
+
+                foreach (var row in data)
+                {
+                    result.Add(row["DocNum"].ToString());
+                }
+
+                return result;
+            }
+            catch (Exception)
+            {
+
+                throw;
+            }
+        }
+
+        public static void UpdateRemarks(int docEntry, string remarks)
+        {
+            Company oCompany = CompanyService.GetCompany();
+
+            // Ambil PO
+            var po = (ProductionOrders)oCompany.GetBusinessObject(
+                         BoObjectTypes.oProductionOrders);
+
+            if (!po.GetByKey(docEntry))
+                throw new InvalidOperationException($"Production Order DocEntry {docEntry} tidak ditemukan.");
+            
+
+            po.Remarks = remarks;
+
+            if (po.Update() != 0)
+            {
+                oCompany.GetLastError(out int errCode, out string errMsg);
+                throw new InvalidOperationException(
+                    $"Failed to update remarks Production Order ({errCode}) {errMsg}");
+            }
+        }
+
     }
 }

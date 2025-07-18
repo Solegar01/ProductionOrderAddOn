@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using ProductionOrderAddOn.Services;
 using SAPbouiCOM.Framework;
@@ -24,8 +25,9 @@ namespace ProductionOrderAddOn
             oCreationPackage.String = "Production Order Add On";
             oCreationPackage.Enabled = true;
             oCreationPackage.Position = -1;
+            
+            Application.SBO_Application.ItemEvent += SBO_Application_ItemEvent;
 
-            Application.SBO_Application.FormDataEvent += OnFormDataEvent;
             oMenus = oMenuItem.SubMenus;
 
             try
@@ -74,36 +76,99 @@ namespace ProductionOrderAddOn
             }
         }
 
-        private void OnFormDataEvent(ref SAPbouiCOM.BusinessObjectInfo bi, out bool bubbleEvent)
+        // Temp variable di luar method (class-level)
+        private string _statusLama = "";
+
+        private void SBO_Application_ItemEvent(string FormUID, ref SAPbouiCOM.ItemEvent pVal, out bool BubbleEvent)
         {
-            bubbleEvent = true;
-            // GRPO (FormType 143) selesai disimpan
-            if (bi.FormTypeEx == "169" &&
-                !bi.BeforeAction &&
-                bi.EventType == SAPbouiCOM.BoEventTypes.et_FORM_DATA_ADD &&
-                bi.ActionSuccess)
+            BubbleEvent = true;
+
+            SAPbouiCOM.ProgressBar progress = null;
+            // Production Order Form
+            if (pVal.FormTypeEx == "65211")
             {
-                bool success = false;
-                try
+                if (pVal.EventType == SAPbouiCOM.BoEventTypes.et_ITEM_PRESSED && pVal.BeforeAction && pVal.ItemUID == "1")
                 {
-                    
-                    success = true;
+                    // Simpan status lama
+                    try
+                    {
+                        SAPbouiCOM.Form oForm = Application.SBO_Application.Forms.Item(FormUID);
+                        SAPbouiCOM.DBDataSource ds = oForm.DataSources.DBDataSources.Item("OWOR");
+                        string docEntryStr = ds.GetValue("DocEntry", 0).Trim();
+                        int docEntry;
+                        if (int.TryParse(docEntryStr, out docEntry))
+                        {
+                            var oCompany = (SAPbobsCOM.Company)Application.SBO_Application.Company.GetDICompany();
+                            var oRS = (SAPbobsCOM.Recordset)oCompany.GetBusinessObject(SAPbobsCOM.BoObjectTypes.BoRecordset);
+                            oRS.DoQuery($"SELECT Status FROM OWOR WHERE DocEntry = {docEntry}");
+                            _statusLama = oRS.Fields.Item("Status").Value.ToString();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        if (progress != null) progress.Stop();
+                        Application.SBO_Application.StatusBar.SetText("Gagal ambil status lama: " + ex.Message,
+                            SAPbouiCOM.BoMessageTime.bmt_Short, SAPbouiCOM.BoStatusBarMessageType.smt_Error);
+                    }
                 }
-                catch (OperationCanceledException)
+
+                if (pVal.EventType == SAPbouiCOM.BoEventTypes.et_ITEM_PRESSED && pVal.ActionSuccess && pVal.ItemUID == "1")
                 {
-                    Application.SBO_Application.StatusBar.SetText(
-                        "Process cancelled by user.",
-                        SAPbouiCOM.BoMessageTime.bmt_Short,
-                        SAPbouiCOM.BoStatusBarMessageType.smt_Warning);
-                }
-                catch (Exception ex)
-                {
-                    Application.SBO_Application.StatusBar.SetText(
-                        "Error Auto GI/GR: " + ex.Message,
-                        SAPbouiCOM.BoMessageTime.bmt_Long,
-                        SAPbouiCOM.BoStatusBarMessageType.smt_Error);
+                    // After update sukses, ambil status baru dan bandingkan
+                    try
+                    {
+                        SAPbouiCOM.Form oForm = Application.SBO_Application.Forms.Item(FormUID);
+                        SAPbouiCOM.DBDataSource ds = oForm.DataSources.DBDataSources.Item("OWOR");
+                        string docEntryStr = ds.GetValue("DocEntry", 0).Trim();
+                        int docEntry;
+                        if (int.TryParse(docEntryStr, out docEntry))
+                        {
+                            var oCompany = (SAPbobsCOM.Company)Application.SBO_Application.Company.GetDICompany();
+                            var oRS = (SAPbobsCOM.Recordset)oCompany.GetBusinessObject(SAPbobsCOM.BoObjectTypes.BoRecordset);
+                            oRS.DoQuery($"SELECT Status, ISNULL(U_T2_PRODTYPE,'') AS ProdType  FROM OWOR WHERE DocEntry = {docEntry}");
+                            string statusBaru = oRS.Fields.Item("Status").Value.ToString();
+                            string prodType = oRS.Fields.Item("ProdType").Value.ToString();
+
+                            // Cek perubahan
+                            if (_statusLama != statusBaru && statusBaru == "R" && prodType == "FG")
+                            {
+                                // Tambahkan proses kamu di sini
+                                progress = Application.SBO_Application.StatusBar.CreateProgressBar("Generating sub-orders...", 100, false);
+                        
+                                // Generate suborder
+                                progress.Value = 0;
+                                progress.Text = "Generating WIP Production Orders...";
+                                var listDoc = ProductionOrderSapService.GenerateSubOrder(docEntry, (current, total) => progress.Value = (current * 100) / total);
+                                progress.Value = 100; // Ensure it reaches the end
+                                progress.Text = "Done.";
+                                progress.Stop();
+                                if (listDoc != null && listDoc.Any())
+                                {
+                                    string remarks = "WIP Production Orders: " + string.Join(" | ", listDoc);
+                                    ProductionOrderSapService.UpdateRemarks(docEntry, remarks);
+                                    
+                                    // Optional: delay dulu biar update SAP selesai
+                                    System.Threading.Thread.Sleep(1000);
+
+                                    // Refresh
+                                    oForm.Freeze(true);
+                                    oForm.Close();
+                                    Application.SBO_Application.OpenForm(SAPbouiCOM.BoFormObjectEnum.fo_ProductionOrder, "", docEntry.ToString());
+                                    Application.SBO_Application.StatusBar.SetText("Successfully Generating WIP Production Orders",
+                                    SAPbouiCOM.BoMessageTime.bmt_Short, SAPbouiCOM.BoStatusBarMessageType.smt_Success);
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        if(progress != null) progress.Stop();
+                        Application.SBO_Application.StatusBar.SetText("Failed to update: " + ex.Message,
+                            SAPbouiCOM.BoMessageTime.bmt_Short, SAPbouiCOM.BoStatusBarMessageType.smt_Error);
+                    }
                 }
             }
         }
+
     }
 }
