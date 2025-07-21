@@ -109,6 +109,18 @@ namespace ProductionOrderAddOn.Services
                     }
                     if (results.Any())
                     {
+                        // Find duplicates
+                        var duplicateIds = results
+                            .GroupBy(i => i.ProdNo)
+                            .Where(g => g.Count() > 1)
+                            .Select(g => g.Key)
+                            .ToList();
+
+                        if (duplicateIds.Any())
+                        {
+                            throw new Exception ("Duplicates found for Item: " + string.Join(", ", duplicateIds));
+                        }
+
                         results = results.OrderBy(r => r.OrderDate).ToList();
                     }
                 }
