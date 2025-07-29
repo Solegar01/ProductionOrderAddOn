@@ -204,28 +204,22 @@ namespace ProductionOrderAddOn.Services
             }
         }
 
-        public static List<string> GenerateSubOrder(int docEntry, Action<int, int> onProgress = null)
+        public static List<string> GenerateSubOrder(int docEntry)
         {
             List<string> resultEntries = new List<string>();
             List<int> listEntries = new List<int>();
 
             try
             {
-                List<int> docEntries = new List<int> { docEntry };
-                var wipModels = GetProductionOrders(docEntries).ToList();
+                var docEntries = new List<int> { docEntry };
+                var wipModels = GetProductionOrders(docEntries)?.ToList();
 
-                int total = wipModels.Count;
-                int current = 0;
-
-                if (total > 0)
+                if (wipModels != null && wipModels.Any())
                 {
-                    foreach (var wip in wipModels)
+                    var subDocs = CreateProductionOrdersRecursive("", wipModels);
+                    if (subDocs != null && subDocs.Any())
                     {
-                        var subDocs = CreateProductionOrdersRecursive("", wipModels);
                         listEntries.AddRange(subDocs);
-
-                        current++;
-                        onProgress?.Invoke(current, total); // 👈 Callback progress
                     }
                 }
 
@@ -236,9 +230,9 @@ namespace ProductionOrderAddOn.Services
 
                 return resultEntries;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                throw;
+                throw new Exception("Error in GenerateSubOrder method", ex);
             }
         }
 
@@ -257,7 +251,7 @@ namespace ProductionOrderAddOn.Services
                     WHERE 
                         W.DocEntry IN ({inClause})
                     ORDER BY 
-                        W.DocNum DESC
+                        W.DocNum
                     ";
             try
             {

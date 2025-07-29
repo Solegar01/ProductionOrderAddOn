@@ -98,8 +98,8 @@ namespace ProductionOrderAddOn.Services
                             {
                                 results.Add(new ProductionOrderModel
                                 {
-                                    ProdNo = row.Cell(1).GetValue<string>(),
-                                    ProdDesc = row.Cell(2).GetValue<string>(),
+                                    ProdNo = row.Cell(1).GetValue<string>().Trim(),
+                                    ProdDesc = row.Cell(2).GetValue<string>().Trim(),
                                     Qty = qty,
                                     OrderDate = orderDate,
                                     ProdType = ProductionType.FG,

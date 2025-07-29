@@ -31,14 +31,10 @@ namespace ProductionOrderAddOn
         private static bool _userCanceled = false;
         private SAPbouiCOM.Button BtnRefresh;
         private SAPbouiCOM.Button BtnReset;
-        
-        public ImportForm()
-        {
-        }
-        
-        /// <summary>
-        /// Initialize components. Called by framework after form created.
-        /// </summary>
+
+        //public ImportForm()
+        //{
+        //}
 
         public override void OnInitializeComponent()
         {
@@ -60,7 +56,7 @@ namespace ProductionOrderAddOn
             this.BtnRefresh.ClickBefore += new SAPbouiCOM._IButtonEvents_ClickBeforeEventHandler(this.BtnRefresh_ClickBefore);
             this.BtnReset = ((SAPbouiCOM.Button)(this.GetItem("BtnReset").Specific));
             this.BtnReset.ClickBefore += new SAPbouiCOM._IButtonEvents_ClickBeforeEventHandler(this.BtnReset_ClickBefore);
-            SAPbouiCOM.Framework.Application.SBO_Application.ProgressBarEvent += new SAPbouiCOM._IApplicationEvents_ProgressBarEventEventHandler(this.OnProgressBarEvent);
+         SAPbouiCOM.Framework.Application.SBO_Application.ProgressBarEvent += new SAPbouiCOM._IApplicationEvents_ProgressBarEventEventHandler(this.OnProgressBarEvent);
             this.OnCustomInitialize();
 
         }
@@ -76,13 +72,13 @@ namespace ProductionOrderAddOn
 
         private void OnCustomInitialize()
         {
-
+            
         }
 
         #region Events
         private void Form_LoadAfter(SAPbouiCOM.SBOItemEventArg pVal)
         {
-
+            
         }
 
         private void TxtPath_KeyDownAfter(object sboObject, SAPbouiCOM.SBOItemEventArg pVal)
@@ -118,6 +114,8 @@ namespace ProductionOrderAddOn
         private void BtnBrowse_ClickBefore(object sboObject, SAPbouiCOM.SBOItemEventArg pVal, out bool BubbleEvent)
         {
             BubbleEvent = true;
+
+
             HandleBrowse();
         }
 
@@ -431,7 +429,7 @@ namespace ProductionOrderAddOn
             dt.Columns.Add("No.", SAPbouiCOM.BoFieldsType.ft_AlphaNumeric, 50);
             dt.Columns.Add("Description", SAPbouiCOM.BoFieldsType.ft_AlphaNumeric);
             dt.Columns.Add("Qty", SAPbouiCOM.BoFieldsType.ft_Quantity);
-            dt.Columns.Add("Due Date", SAPbouiCOM.BoFieldsType.ft_Date);
+            dt.Columns.Add("Order Date", SAPbouiCOM.BoFieldsType.ft_Date);
 
             foreach (var x in listData)
             {
@@ -439,7 +437,7 @@ namespace ProductionOrderAddOn
                 dt.Rows.Add();             // tambahkan baris kosong
                 dt.SetValue("No.", row, x.ProdNo);
                 dt.SetValue("Description", row, x.ProdDesc);
-                dt.SetValue("Due Date", row, x.OrderDate);
+                dt.SetValue("Order Date", row, x.OrderDate);
                 dt.SetValue("Qty", row, x.Qty);
             }
 
@@ -523,5 +521,6 @@ namespace ProductionOrderAddOn
         }
 
         #endregion
+        
     }
 }

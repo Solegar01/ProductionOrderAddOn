@@ -138,7 +138,7 @@ namespace ProductionOrderAddOn
                                 // Generate suborder
                                 progress.Value = 0;
                                 progress.Text = "Generating WIP Production Orders...";
-                                var listDoc = ProductionOrderSapService.GenerateSubOrder(docEntry, (current, total) => progress.Value = (current * 100) / total);
+                                var listDoc = ProductionOrderSapService.GenerateSubOrder(docEntry);
                                 progress.Value = 100; // Ensure it reaches the end
                                 progress.Text = "Done.";
                                 progress.Stop();
@@ -167,6 +167,7 @@ namespace ProductionOrderAddOn
                             SAPbouiCOM.BoMessageTime.bmt_Short, SAPbouiCOM.BoStatusBarMessageType.smt_Error);
                     }
                 }
+                
             }
         }
 

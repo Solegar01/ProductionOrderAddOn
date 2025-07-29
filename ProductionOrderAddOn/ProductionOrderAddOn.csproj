@@ -167,7 +167,6 @@
     <Compile Include="Helpers\SapQueryHelper.cs" />
     <Compile Include="Services\CompanyService.cs" />
     <Compile Include="Services\ExcelImportService.cs" />
-    <Compile Include="Services\GenerateSubProductionOrderService.cs" />
     <Compile Include="Services\ProductionOrderSapService.cs" />
     <None Include="app.config" />
     <None Include="Form1.b1f">
