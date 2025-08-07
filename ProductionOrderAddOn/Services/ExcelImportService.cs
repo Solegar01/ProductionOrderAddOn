@@ -111,9 +111,9 @@ namespace ProductionOrderAddOn.Services
                     {
                         // Find duplicates
                         var duplicateIds = results
-                            .GroupBy(i => i.ProdNo)
+                            .GroupBy(i => new { i.ProdNo, i.OrderDate })
                             .Where(g => g.Count() > 1)
-                            .Select(g => g.Key)
+                            .Select(g => $"{g.Key.ProdNo} (Order Date: {g.Key.OrderDate:yyyy-MM-dd})")
                             .ToList();
 
                         if (duplicateIds.Any())

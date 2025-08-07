@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Xml;
 using ProductionOrderAddOn.Models;
 using ProductionOrderAddOn.Services;
+using SAPbobsCOM;
 using SAPbouiCOM.Framework;
 
 namespace ProductionOrderAddOn
@@ -109,6 +110,7 @@ namespace ProductionOrderAddOn
             {
                 Application.SBO_Application.StatusBar.SetText(ex.Message, SAPbouiCOM.BoMessageTime.bmt_Short, SAPbouiCOM.BoStatusBarMessageType.smt_Error);
             }
+            
         }
 
         private void BtnBrowse_ClickBefore(object sboObject, SAPbouiCOM.SBOItemEventArg pVal, out bool BubbleEvent)
@@ -328,9 +330,11 @@ namespace ProductionOrderAddOn
         private bool ImportToSAP()
         {
             bool success = false;
+            Company oCompany = null;
             try
             {
-
+                oCompany = Services.CompanyService.GetCompany();
+                oCompany.StartTransaction();
                 if (string.IsNullOrEmpty(this.FilePath))
                     throw new Exception("Please select a file to import.");
 
@@ -339,7 +343,13 @@ namespace ProductionOrderAddOn
                     1, "Yes", "No", "");
 
                 if (result != 1)
+                {
+                    if (oCompany.InTransaction)
+                    {
+                        oCompany.EndTransaction(BoWfTransOpt.wf_RollBack);
+                    }
                     return false;
+                }
 
                 StartProgressBar("Importing data to SAP");
 
@@ -353,7 +363,7 @@ namespace ProductionOrderAddOn
 
                 foreach (var item in listData)
                 {
-                    if (ProductionOrderSapService.IsProdOrderExists(item))
+                    if (ProductionOrderSapService.IsProdOrderExists(oCompany,item))
                     {
                         throw new Exception($"A Production Order for item '{item.ProdNo}' already exists on {item.OrderDate:dddd, dd MMMM yyyy}.");
 
@@ -361,18 +371,45 @@ namespace ProductionOrderAddOn
                 }
 
                 string fileName = System.IO.Path.GetFileName(FilePath);
+                
+                List<int> fgDocEntries = new List<int>();
 
-                // 🌟 Satu baris rekursif → membuat semua PO hingga WIP selesai
-                List<int> allDocEntries = ProductionOrderSapService.CreateProductionOrdersRecursive(fileName,listData);
+                foreach (var item in listData)
+                {
+                    var resultEntry = ProductionOrderSapService.CreateProductionOrder(oCompany, fileName, item);
+                    var listDoc = ProductionOrderSapService.GenerateSubOrder(oCompany, resultEntry, fileName);
+                    foreach (var dictionary in listDoc)
+                    {
+                        int wipEntry = dictionary.Key;
+                        ProductionOrderSapService.LinkWipToFG(oCompany, resultEntry, wipEntry);
+                    }
 
-                if (allDocEntries == null || allDocEntries.Count == 0)
+                    if (listDoc != null && listDoc.Any())
+                    {
+                        string remarks = "WIP Production Orders: " + string.Join(" | ", listDoc.Values);
+                        ProductionOrderSapService.UpdateRemarks(oCompany, resultEntry, remarks);
+
+                    }
+
+                    fgDocEntries.Add(resultEntry);
+                }
+
+                if (fgDocEntries == null || fgDocEntries.Count == 0)
                     throw new Exception("No production orders were created in SAP.");
+
+                if (oCompany.InTransaction)
+                {
+                    oCompany.EndTransaction(BoWfTransOpt.wf_Commit);
+                }
                 success = true;
                 return success;
             }
             catch (Exception ex)
             {
-
+                if (oCompany.InTransaction)
+                {
+                    oCompany.EndTransaction(BoWfTransOpt.wf_RollBack);
+                }
                 throw new Exception("Error during import: " + ex.Message);
 
                 // Optional: log ke file atau tampilkan pesan lebih detail jika diperlukan
@@ -380,6 +417,7 @@ namespace ProductionOrderAddOn
             finally
             {
                 StopProgressBar();
+                oCompany = null;
                 if (success)
                 {
                     System.Threading.ThreadPool.QueueUserWorkItem(_ =>

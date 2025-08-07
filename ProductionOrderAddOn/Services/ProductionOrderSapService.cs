@@ -10,9 +10,9 @@ namespace ProductionOrderAddOn.Services
 {
     internal static class ProductionOrderSapService
     {
-        private static readonly Company oCompany = CompanyService.GetCompany();
+        //private static readonly Company oCompany = CompanyService.GetCompany();
 
-        public static List<int> CreateProductionOrdersRecursive(string fileName, IEnumerable<ProductionOrderModel> models, HashSet<ProductionKey> visitedKeys = null)
+        public static List<int> CreateProductionOrdersRecursive(Company oCompany,string fileName, IEnumerable<ProductionOrderModel> models, HashSet<ProductionKey> visitedKeys = null)
         {
             if (models == null) throw new ArgumentNullException(nameof(models));
             if (visitedKeys == null) visitedKeys = new HashSet<ProductionKey>();
@@ -26,15 +26,15 @@ namespace ProductionOrderAddOn.Services
 
             if (batchModels.Count == 0) return allDocEntries;
             
-            bool startedTran = false;
+            //bool startedTran = false;
 
             try
             {
-                if (!oCompany.InTransaction)
-                {
-                    oCompany.StartTransaction();
-                    startedTran = true;
-                }
+                //if (!oCompany.InTransaction)
+                //{
+                //    oCompany.StartTransaction();
+                //    startedTran = true;
+                //}
 
                 foreach (var m in batchModels)
                 {
@@ -71,7 +71,7 @@ namespace ProductionOrderAddOn.Services
                         int docEntry = int.Parse(oCompany.GetNewObjectKey());
                         allDocEntries.Add(docEntry);
 
-                        UpdatePoStatus(docEntry, BoProductionOrderStatusEnum.boposReleased);
+                        UpdatePoStatus(oCompany,docEntry, BoProductionOrderStatusEnum.boposReleased);
                     }
                     finally
                     {
@@ -79,13 +79,13 @@ namespace ProductionOrderAddOn.Services
                     }
                 }
 
-                if (startedTran) oCompany.EndTransaction(BoWfTransOpt.wf_Commit);
+                //if (startedTran) oCompany.EndTransaction(BoWfTransOpt.wf_Commit);
 
-                var wipModels = GetProductionOrders(allDocEntries).ToList();
+                var wipModels = GetProductionOrders(oCompany,allDocEntries).ToList();
 
                 if (wipModels.Count > 0)
                 {
-                    var subDocEntries = CreateProductionOrdersRecursive(fileName,wipModels, visitedKeys);
+                    var subDocEntries = CreateProductionOrdersRecursive(oCompany,fileName,wipModels, visitedKeys);
                     allDocEntries.AddRange(subDocEntries);
                 }
 
@@ -93,15 +93,69 @@ namespace ProductionOrderAddOn.Services
             }
             catch
             {
-                if (startedTran && oCompany.InTransaction)
-                    oCompany.EndTransaction(BoWfTransOpt.wf_RollBack);
+                //if (startedTran && oCompany.InTransaction)
+                //    oCompany.EndTransaction(BoWfTransOpt.wf_RollBack);
                 throw;
             }
         }
-        
-        public static void UpdatePoStatus(int docEntry, BoProductionOrderStatusEnum target)
+
+        public static int CreateProductionOrder(
+        Company oCompany,
+        string fileName,
+        ProductionOrderModel model)
         {
-            Company oCompany = CompanyService.GetCompany();
+            if (model == null) throw new ArgumentNullException(nameof(model));
+
+            ProductionOrders po = null;
+
+            try
+            {
+                po = (ProductionOrders)oCompany.GetBusinessObject(BoObjectTypes.oProductionOrders);
+                po.ItemNo = model.ProdNo;
+                po.ProductionOrderType = BoProductionOrderTypeEnum.bopotStandard;
+                po.ProductionOrderStatus = BoProductionOrderStatusEnum.boposPlanned;
+                po.PlannedQuantity = model.Qty;
+                po.PostingDate = model.OrderDate.Date;
+                po.StartDate = model.OrderDate.Date;
+                po.DueDate = model.OrderDate.Date;
+                po.UserFields.Fields.Item("U_T2_PRODTYPE").Value = model.ProdType.ToString();
+
+                if (!string.IsNullOrEmpty(fileName))
+                {
+                    po.Remarks = $"Imported from file {fileName}";
+                    po.UserFields.Fields.Item("U_T2_Is_Import").Value = "Y";
+                }
+
+                if (!string.IsNullOrEmpty(model.RefProdEntry))
+                {
+                    po.UserFields.Fields.Item("U_T2_Ref_Production").Value = model.RefProdEntry;
+                    po.UserFields.Fields.Item("U_T2_Ref_Prod_DocNum").Value = model.RefProdNum;
+                }
+
+                int rc = po.Add();
+                if (rc != 0)
+                {
+                    oCompany.GetLastError(out int errCode, out string errMsg);
+                    throw new Exception($"Failed to create PO {model.ProdNo} ({errCode}): {errMsg}");
+                }
+
+                string keyStr = oCompany.GetNewObjectKey();
+                if (!int.TryParse(keyStr, out int docEntry))
+                    throw new Exception("Failed to retrieve new production order DocEntry.");
+
+                UpdatePoStatus(oCompany, docEntry, BoProductionOrderStatusEnum.boposReleased);
+
+                return docEntry;
+            }
+            finally
+            {
+                if (po != null) Marshal.ReleaseComObject(po);
+            }
+        }
+
+
+        public static void UpdatePoStatus(Company oCompany,int docEntry, BoProductionOrderStatusEnum target)
+        {
 
             // Ambil PO
             var po = (ProductionOrders)oCompany.GetBusinessObject(
@@ -123,7 +177,7 @@ namespace ProductionOrderAddOn.Services
             }
         }
         
-        public static List<ProductionOrderModel> GetProductionOrders(IEnumerable<int> docEntries)
+        public static List<ProductionOrderModel> GetProductionOrders(Company oCompany,IEnumerable<int> docEntries)
         {
             if (docEntries == null)
                 throw new ArgumentNullException(nameof(docEntries));
@@ -178,7 +232,7 @@ namespace ProductionOrderAddOn.Services
             }
         }
 
-        public static bool IsProdOrderExists(ProductionOrderModel model)
+        public static bool IsProdOrderExists(Company oCompany,ProductionOrderModel model)
         {
             if (model == null)
                 throw new ArgumentNullException(nameof(model));
@@ -204,19 +258,19 @@ namespace ProductionOrderAddOn.Services
             }
         }
 
-        public static List<string> GenerateSubOrder(int docEntry)
+        public static Dictionary<int,string> GenerateSubOrder(Company oCompany,int docEntry, string fileName = "")
         {
-            List<string> resultEntries = new List<string>();
+            Dictionary<int,string> resultEntries = new Dictionary<int,string>();
             List<int> listEntries = new List<int>();
 
             try
             {
                 var docEntries = new List<int> { docEntry };
-                var wipModels = GetProductionOrders(docEntries)?.ToList();
+                var wipModels = GetProductionOrders(oCompany,docEntries)?.ToList();
 
                 if (wipModels != null && wipModels.Any())
                 {
-                    var subDocs = CreateProductionOrdersRecursive("", wipModels);
+                    var subDocs = CreateProductionOrdersRecursive(oCompany,fileName, wipModels);
                     if (subDocs != null && subDocs.Any())
                     {
                         listEntries.AddRange(subDocs);
@@ -225,9 +279,8 @@ namespace ProductionOrderAddOn.Services
 
                 if (listEntries.Any())
                 {
-                    resultEntries = GetDocNum(listEntries);
+                    resultEntries = GetDocNum(oCompany,listEntries);
                 }
-
                 return resultEntries;
             }
             catch (Exception ex)
@@ -236,14 +289,14 @@ namespace ProductionOrderAddOn.Services
             }
         }
 
-
-        public static List<string> GetDocNum(List<int> docEntries)
+        public static Dictionary<int,string> GetDocNum(Company oCompany,List<int> docEntries)
         {
-            List<string> result = new List<string>();
+            Dictionary<int,string> result = new Dictionary<int,string>();
             string inClause = string.Join(", ", docEntries);
 
             string sql = $@"
                     SELECT 
+                        W.DocEntry AS DocEntry,
                         W.DocNum AS DocNum
                     FROM 
                         OWOR W
@@ -259,7 +312,9 @@ namespace ProductionOrderAddOn.Services
 
                 foreach (var row in data)
                 {
-                    result.Add(row["DocNum"].ToString());
+                    var entry = int.Parse(row["DocEntry"].ToString());
+                    var num = row["DocNum"].ToString();
+                    result.Add(entry,num);
                 }
 
                 return result;
@@ -271,27 +326,75 @@ namespace ProductionOrderAddOn.Services
             }
         }
 
-        public static void UpdateRemarks(int docEntry, string remarks)
+        public static void UpdateRemarks(Company oCompany,int docEntry, string remarks)
         {
-            Company oCompany = CompanyService.GetCompany();
-
             // Ambil PO
             var po = (ProductionOrders)oCompany.GetBusinessObject(
                          BoObjectTypes.oProductionOrders);
 
             if (!po.GetByKey(docEntry))
                 throw new InvalidOperationException($"Production Order DocEntry {docEntry} tidak ditemukan.");
-            
-
-            po.Remarks = remarks;
-
-            if (po.Update() != 0)
+            try
             {
-                oCompany.GetLastError(out int errCode, out string errMsg);
-                throw new InvalidOperationException(
-                    $"Failed to update remarks Production Order ({errCode}) {errMsg}");
+                po.Remarks = (string.IsNullOrEmpty(po.Remarks)) ? remarks : $"{po.Remarks}{Environment.NewLine}{remarks}";
+
+                if (po.Update() != 0)
+                {
+                    oCompany.GetLastError(out int errCode, out string errMsg);
+                    throw new InvalidOperationException(
+                        $"Failed to update remarks Production Order ({errCode}) {errMsg}");
+                }
             }
+            catch (Exception)
+            {
+                throw;
+            }
+            
         }
 
+
+        public static bool LinkWipToFG(Company oCompany, int fgDocEntry, int wipDocEntry)
+        {
+            string sql = "SELECT T2.RefDocEntr AS TransId FROM OWOR T0 INNER JOIN WOR5 T2 ON T2.DocEntry = T0.DocEntry WHERE T0.DocEntry = '" + fgDocEntry + "'";
+            try
+            {
+                Recordset rs = null;
+                int recCount = 0;
+                rs = (SAPbobsCOM.Recordset)oCompany.GetBusinessObject(SAPbobsCOM.BoObjectTypes.BoRecordset);
+                rs.DoQuery(sql);
+
+                if (!rs.EoF)
+                {
+                    recCount = rs.RecordCount;
+                }
+                
+                SAPbobsCOM.ProductionOrders oWO = (SAPbobsCOM.ProductionOrders)oCompany.GetBusinessObject(SAPbobsCOM.BoObjectTypes.oProductionOrders);
+
+                if (!oWO.GetByKey(fgDocEntry))
+                    throw new Exception($"GRPO with DocEntry {fgDocEntry} not found.");
+
+                // Add Goods Receipt as referenced document
+                oWO.DocumentReferences.Add();
+                oWO.DocumentReferences.SetCurrentLine(recCount);
+                oWO.DocumentReferences.ReferencedObjectType = SAPbobsCOM.ReferencedObjectTypeEnum.rot_ProductionOrder;
+                oWO.DocumentReferences.ReferencedDocEntry = wipDocEntry;
+                oWO.DocumentReferences.IssueDate = DateTime.Today;
+                oWO.DocumentReferences.Remark = "Auto-linked WIP Production Order";
+
+                // Update GRPO
+                int updateResult = oWO.Update();
+
+                if (updateResult != 0)
+                {
+                    oCompany.GetLastError(out int errCode, out string errMsg);
+                    throw new Exception($"Failed to link WIP Production Order to FG Production Order. Error {errCode}: {errMsg}");
+                }
+                return true;
+            }
+            catch (Exception)
+            {
+                throw;
+            }
+        }
     }
 }
