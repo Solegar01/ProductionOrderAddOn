@@ -165,6 +165,7 @@
     <Compile Include="Models\ProductionKey.cs" />
     <Compile Include="Models\ProductionOrderModel.cs" />
     <Compile Include="Helpers\SapQueryHelper.cs" />
+    <Compile Include="ProdOrderListForm.cs" />
     <Compile Include="Services\CompanyService.cs" />
     <Compile Include="Services\ExcelImportService.cs" />
     <Compile Include="Services\ProductionOrderSapService.cs" />

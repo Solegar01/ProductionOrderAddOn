@@ -32,6 +32,7 @@ namespace ProductionOrderAddOn
         private static bool _userCanceled = false;
         private SAPbouiCOM.Button BtnRefresh;
         private SAPbouiCOM.Button BtnReset;
+        private SAPbouiCOM.Button BtnProdOrderList;
 
         //public ImportForm()
         //{
@@ -57,7 +58,9 @@ namespace ProductionOrderAddOn
             this.BtnRefresh.ClickBefore += new SAPbouiCOM._IButtonEvents_ClickBeforeEventHandler(this.BtnRefresh_ClickBefore);
             this.BtnReset = ((SAPbouiCOM.Button)(this.GetItem("BtnReset").Specific));
             this.BtnReset.ClickBefore += new SAPbouiCOM._IButtonEvents_ClickBeforeEventHandler(this.BtnReset_ClickBefore);
-         SAPbouiCOM.Framework.Application.SBO_Application.ProgressBarEvent += new SAPbouiCOM._IApplicationEvents_ProgressBarEventEventHandler(this.OnProgressBarEvent);
+            SAPbouiCOM.Framework.Application.SBO_Application.ProgressBarEvent += new SAPbouiCOM._IApplicationEvents_ProgressBarEventEventHandler(this.OnProgressBarEvent);
+            this.BtnProdOrderList = ((SAPbouiCOM.Button)(this.GetItem("BtnImpList").Specific));
+            this.BtnProdOrderList.ClickBefore += new SAPbouiCOM._IButtonEvents_ClickBeforeEventHandler(this.BtnProdOrderList_ClickBefore);
             this.OnCustomInitialize();
 
         }
@@ -160,6 +163,14 @@ namespace ProductionOrderAddOn
         {
             BubbleEvent = true;
             Reset();
+        }
+
+        private void BtnProdOrderList_ClickBefore(object sboObject, SAPbouiCOM.SBOItemEventArg pVal, out bool BubbleEvent)
+        {
+            BubbleEvent = true;
+            var poForm = new ProdOrderListForm();
+            poForm.Show();
+
         }
 
         #endregion
@@ -313,7 +324,10 @@ namespace ProductionOrderAddOn
                 this.listData = ExcelImportService.ImportProductionOrders(FilePath, fromDate, toDate);
                 
                 if (!this.listData.Any())
+                {
+                    ClearDataModel();
                     throw new Exception("Data not found");
+                }
                 res = true;
                 return res;
             }
@@ -559,6 +573,6 @@ namespace ProductionOrderAddOn
         }
 
         #endregion
-        
+
     }
 }

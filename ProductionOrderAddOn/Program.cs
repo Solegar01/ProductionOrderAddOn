@@ -10,15 +10,19 @@ namespace ProductionOrderAddOn
         /// <summary>
         /// The main entry point for the application.
         /// </summary>
+        public static SAPbouiCOM.Application SBO_Application;
+
         [STAThread]
         static void Main(string[] args)
         {
             try
             {
                 Application oApp = null;
+
                 if (args.Length < 1)
                 {
                     oApp = new Application();
+                    SBO_Application = Application.SBO_Application;
                 }
                 else
                 {

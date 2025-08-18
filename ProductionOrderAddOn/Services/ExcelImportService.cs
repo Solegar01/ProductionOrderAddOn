@@ -61,7 +61,7 @@ namespace ProductionOrderAddOn.Services
                             $"do not match the selected Date To ({toDate:MM/yyyy}).");
                         }
                     }
-
+                    
                     const int startColDate = 3;   // kolom C
                     const int endCol = 34;  // kolom AH
                     
@@ -85,6 +85,17 @@ namespace ProductionOrderAddOn.Services
                             }
                         }
                     }
+
+                    bool isSameMonth = colDateMap
+                    .Select(x => new { x.OrderDate.Year, x.OrderDate.Month })
+                    .Distinct()
+                    .Count() == 1;
+
+                    if (!isSameMonth)
+                    {
+                        throw new Exception("Dates must be in 1 month period per file");
+                    }
+
 
                     // 3️⃣  Loop baris data (mulai baris ke‑4)
                     foreach (IXLRow row in ws.RowsUsed().Skip(3))
