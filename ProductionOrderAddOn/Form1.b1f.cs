@@ -277,7 +277,7 @@ namespace ProductionOrderAddOn
 
                         if (dialog.ShowDialog(dummyForm) == System.Windows.Forms.DialogResult.OK)
                         {
-                            FilePath = dialog.FileName;
+                            FilePath = dialog.FileName.Trim('"').Trim();
                             res = true;
                         }
                         else

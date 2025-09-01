@@ -202,7 +202,7 @@ namespace ProductionOrderAddOn.Services
                         INNER JOIN WOR1 t3 ON t3.DocEntry = t0.DocEntry
                                             AND t3.ItemCode = t2.Code
                         WHERE t0.DocEntry IN ({inClause})
-                            AND ISNULL(t2.U_T2_ITEM_GROUP, '') = 'WIP'
+                            AND ISNULL(t2.U_T2_ITEM_GROUP, '') = '1'
                         ORDER BY t0.PostDate DESC, t2.Code;";
 
             try
