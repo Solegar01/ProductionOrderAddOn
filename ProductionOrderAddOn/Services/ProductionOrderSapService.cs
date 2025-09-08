@@ -65,7 +65,7 @@ namespace ProductionOrderAddOn.Services
                         if (rc != 0)
                         {
                             oCompany.GetLastError(out int errCode, out string errMsg);
-                            throw new Exception($"Gagal membuat PO {m.ProdNo} ({errCode}): {errMsg}");
+                            throw new Exception($"Failed to create {m.ProdNo} ({errCode}): {errMsg}");
                         }
 
                         int docEntry = int.Parse(oCompany.GetNewObjectKey());
@@ -162,7 +162,7 @@ namespace ProductionOrderAddOn.Services
                          BoObjectTypes.oProductionOrders);
 
             if (!po.GetByKey(docEntry))
-                throw new InvalidOperationException($"Production Order DocEntry {docEntry} tidak ditemukan.");
+                throw new InvalidOperationException($"Production Order DocEntry {docEntry} not found.");
 
             // Jika sudah di status target, abaikan
             if (po.ProductionOrderStatus == target) return;
@@ -173,7 +173,7 @@ namespace ProductionOrderAddOn.Services
             {
                 oCompany.GetLastError(out int errCode, out string errMsg);
                 throw new InvalidOperationException(
-                    $"Failed to update status Production Order ({errCode}) {errMsg}");
+                    $"Failed to update status Production Order ({errCode}): {errMsg}");
             }
         }
         
@@ -228,7 +228,7 @@ namespace ProductionOrderAddOn.Services
             }
             catch (Exception ex)
             {
-                throw new Exception("Error while retrieving WIP production orders: " + ex.Message, ex);
+                throw new Exception("Error while retrieving Sub production orders: " + ex.Message, ex);
             }
         }
 
@@ -245,7 +245,8 @@ namespace ProductionOrderAddOn.Services
                 SELECT TOP 1 T0.DocEntry
                 FROM OWOR T0
                 WHERE T0.ItemCode = '{prodNo}'
-                AND CAST(T0.PostDate AS DATE) = '{dateStr}'";
+                AND CAST(T0.PostDate AS DATE) = '{dateStr}'
+                AND ISNULL(Status,'') <> 'C'   ";
 
             try
             {
@@ -285,7 +286,81 @@ namespace ProductionOrderAddOn.Services
             }
             catch (Exception ex)
             {
-                throw new Exception("Error in GenerateSubOrder method", ex);
+                throw new Exception($"Error in generate sub production order method : {ex.Message}", ex);
+            }
+        }
+
+        public static bool UpdateSubOrder(Company oCompany, int docEntry)
+        {
+            SAPbobsCOM.ProductionOrders oProd = null;
+            if (docEntry == 0)
+                throw new ArgumentNullException(nameof(docEntry));
+            
+            try
+            {
+                oProd = (ProductionOrders)oCompany.GetBusinessObject(BoObjectTypes.oProductionOrders);
+                var rs = (Recordset)oCompany.GetBusinessObject(BoObjectTypes.BoRecordset);
+                if (!oProd.GetByKey(docEntry))
+                    throw new InvalidOperationException($"Production Order DocEntry {docEntry} not found.");
+                
+                for (int i = 0; i < oProd.DocumentReferences.Count; i++)
+                {
+                    oProd.DocumentReferences.SetCurrentLine(i);
+                    int refEntry = int.Parse(oProd.DocumentReferences.ReferencedDocEntry.ToString());
+                    double newPlanQty = 0;
+
+                    string sql = $"SELECT T1.PlannedQty FROM OWOR T0 JOIN WOR1 T1 ON T1.DocEntry = T0.U_T2_Ref_Production AND T1.ItemCode = T0.ItemCode WHERE T0.DocEntry = {oProd.DocumentReferences.ReferencedDocEntry} ";
+
+                    rs.DoQuery(sql);
+                    if (!rs.EoF)
+                    {
+                        newPlanQty = (double)rs.Fields.Item("PlannedQty").Value;
+                    }
+
+                    UpdatePoQty(oCompany,refEntry,newPlanQty);
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                throw ex;
+            }
+            finally
+            {
+                if (oProd != null) System.Runtime.InteropServices.Marshal.ReleaseComObject(oProd);
+            }
+        }
+
+        public static void UpdatePoQty(Company oCompany, int docEntry, double qty)
+        {
+            SAPbobsCOM.ProductionOrders po = null;
+            try
+            {
+                // Ambil PO
+                po = (ProductionOrders)oCompany.GetBusinessObject(
+                             BoObjectTypes.oProductionOrders);
+
+                if (!po.GetByKey(docEntry))
+                    throw new InvalidOperationException($"Production Order DocEntry {docEntry} not found.");
+
+                po.PlannedQuantity = qty;
+
+                if (po.Update() != 0)
+                {
+                    oCompany.GetLastError(out int errCode, out string errMsg);
+                    throw new InvalidOperationException(
+                        $"Failed to update planned qty Production Order ({errCode}): {errMsg}");
+                }
+            }
+            catch (Exception)
+            {
+
+                throw;
+            }
+            finally
+            {
+                if (po != null) System.Runtime.InteropServices.Marshal.ReleaseComObject(po);
             }
         }
 
@@ -328,33 +403,37 @@ namespace ProductionOrderAddOn.Services
 
         public static void UpdateRemarks(Company oCompany,int docEntry, string remarks)
         {
-            // Ambil PO
-            var po = (ProductionOrders)oCompany.GetBusinessObject(
-                         BoObjectTypes.oProductionOrders);
-
-            if (!po.GetByKey(docEntry))
-                throw new InvalidOperationException($"Production Order DocEntry {docEntry} tidak ditemukan.");
+            SAPbobsCOM.ProductionOrders po = null;
             try
             {
+                // Ambil PO
+                po = (ProductionOrders)oCompany.GetBusinessObject(
+                             BoObjectTypes.oProductionOrders);
+
+                if (!po.GetByKey(docEntry))
+                    throw new InvalidOperationException($"Production Order DocEntry {docEntry} not found.");
                 po.Remarks = (string.IsNullOrEmpty(po.Remarks)) ? remarks : $"{po.Remarks}{Environment.NewLine}{remarks}";
 
                 if (po.Update() != 0)
                 {
                     oCompany.GetLastError(out int errCode, out string errMsg);
                     throw new InvalidOperationException(
-                        $"Failed to update remarks Production Order ({errCode}) {errMsg}");
+                        $"Failed to update remarks Production Order ({errCode}): {errMsg}");
                 }
             }
             catch (Exception)
             {
                 throw;
             }
-            
+            finally
+            {
+                if (po != null) System.Runtime.InteropServices.Marshal.ReleaseComObject(po);
+            }
         }
-
 
         public static bool LinkWipToFG(Company oCompany, int fgDocEntry, int wipDocEntry)
         {
+            SAPbobsCOM.ProductionOrders oWO = null;
             string sql = "SELECT T2.RefDocEntr AS TransId FROM OWOR T0 INNER JOIN WOR5 T2 ON T2.DocEntry = T0.DocEntry WHERE T0.DocEntry = '" + fgDocEntry + "'";
             try
             {
@@ -368,10 +447,10 @@ namespace ProductionOrderAddOn.Services
                     recCount = rs.RecordCount;
                 }
                 
-                SAPbobsCOM.ProductionOrders oWO = (SAPbobsCOM.ProductionOrders)oCompany.GetBusinessObject(SAPbobsCOM.BoObjectTypes.oProductionOrders);
+                oWO = (SAPbobsCOM.ProductionOrders)oCompany.GetBusinessObject(SAPbobsCOM.BoObjectTypes.oProductionOrders);
 
                 if (!oWO.GetByKey(fgDocEntry))
-                    throw new Exception($"GRPO with DocEntry {fgDocEntry} not found.");
+                    throw new Exception($"Goods Receipt PO with DocEntry {fgDocEntry} not found.");
 
                 // Add Goods Receipt as referenced document
                 oWO.DocumentReferences.Add();
@@ -387,7 +466,7 @@ namespace ProductionOrderAddOn.Services
                 if (updateResult != 0)
                 {
                     oCompany.GetLastError(out int errCode, out string errMsg);
-                    throw new Exception($"Failed to link WIP Production Order to FG Production Order. Error {errCode}: {errMsg}");
+                    throw new Exception($"Failed to link Sub Production Order to FG Production Order. Error ({errCode}): {errMsg}");
                 }
                 return true;
             }
@@ -395,6 +474,71 @@ namespace ProductionOrderAddOn.Services
             {
                 throw;
             }
+            finally
+            {
+                if (oWO != null) System.Runtime.InteropServices.Marshal.ReleaseComObject(oWO);
+            }
         }
+
+        public static void CancelSubOrder(Company oCompany, int docEntry)
+        {
+            SAPbobsCOM.ProductionOrders po = null;
+            try
+            {
+                po = (ProductionOrders)oCompany.GetBusinessObject(
+                         BoObjectTypes.oProductionOrders);
+
+                if (!po.GetByKey(docEntry))
+                    throw new InvalidOperationException($"Production Order DocEntry {docEntry} not found.");
+
+                for (int i = 0; i < po.DocumentReferences.Count; i++)
+                {
+                    po.DocumentReferences.SetCurrentLine(i);
+                    if (po.DocumentReferences.ReferencedObjectType == ReferencedObjectTypeEnum.rot_ProductionOrder)
+                    {
+                        CancelProductionOrder(oCompany,po.DocumentReferences.ReferencedDocEntry);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                throw;
+            }
+            finally
+            {
+                if (po != null) System.Runtime.InteropServices.Marshal.ReleaseComObject(po);
+            }
+        }
+
+        public static bool CancelProductionOrder(SAPbobsCOM.Company oCompany, int docEntry)
+        {
+            SAPbobsCOM.ProductionOrders oProd = null;
+            try
+            {
+                oProd = (SAPbobsCOM.ProductionOrders)oCompany.GetBusinessObject(SAPbobsCOM.BoObjectTypes.oProductionOrders);
+
+                if (!oProd.GetByKey(docEntry))
+                    throw new Exception($"Production Order {docEntry} not found.");
+
+                // Cancel the order
+                int ret = oProd.Cancel();
+                if (ret != 0)
+                {
+                    oCompany.GetLastError(out int errCode, out string errMsg);
+                    throw new Exception($"Failed to cancel Production Order {docEntry}. Error ({errCode}): {errMsg}");
+                }
+
+                return true;
+            }
+            catch (Exception)
+            {
+                throw;
+            }
+            finally
+            {
+                if (oProd != null) System.Runtime.InteropServices.Marshal.ReleaseComObject(oProd);
+            }
+        }
+
     }
 }
