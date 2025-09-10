@@ -290,6 +290,95 @@ namespace ProductionOrderAddOn.Services
             }
         }
 
+        public static List<int> GetSubCanceled(Company oCompany, int docEntry)
+        {
+            if (docEntry == 0)
+                throw new ArgumentNullException(nameof(docEntry));
+
+            SAPbobsCOM.ProductionOrders oProd = null;
+            var result = new List<int>();
+            try
+            {
+                oProd = (ProductionOrders)oCompany.GetBusinessObject(BoObjectTypes.oProductionOrders);
+                var rs = (Recordset)oCompany.GetBusinessObject(BoObjectTypes.BoRecordset);
+                if (!oProd.GetByKey(docEntry))
+                    throw new InvalidOperationException($"Production Order DocEntry {docEntry} not found.");
+
+                var refEntries = new List<int>();
+                for (int i = 0; i < oProd.DocumentReferences.Count; i++)
+                {
+                    oProd.DocumentReferences.SetCurrentLine(i);
+                    int refEntry = int.Parse(oProd.DocumentReferences.ReferencedDocEntry.ToString());
+                    refEntries.Add(refEntry);
+                }
+
+                if (!refEntries.Any()) return result;
+
+                var strRefEntries = string.Join(",", refEntries);
+                string sql = $"SELECT DocNum AS ProdOrderNum FROM OWOR WHERE Status = 'C' AND DocEntry IN ({strRefEntries}) ORDER BY DocNum DESC ";
+
+                rs.DoQuery(sql);
+                while (!rs.EoF)
+                {
+                    result.Add((int)rs.Fields.Item("ProdOrderNum").Value);
+                    rs.MoveNext();
+                }
+
+                return result;
+            }
+            catch (Exception)
+            {
+
+                throw;
+            }
+        }
+
+        public static List<int> GetSubReceipted(Company oCompany, int docEntry)
+        {
+            if (docEntry == 0)
+                throw new ArgumentNullException(nameof(docEntry));
+
+            var result = new List<int>();
+
+            var oProd = (ProductionOrders)oCompany.GetBusinessObject(BoObjectTypes.oProductionOrders);
+            if (!oProd.GetByKey(docEntry))
+                throw new InvalidOperationException($"Production Order DocEntry {docEntry} not found.");
+
+            // Collect reference doc entries
+            var refEntries = new List<int>();
+            for (int i = 0; i < oProd.DocumentReferences.Count; i++)
+            {
+                oProd.DocumentReferences.SetCurrentLine(i);
+                if (int.TryParse(oProd.DocumentReferences.ReferencedDocEntry.ToString(), out int refEntry))
+                    refEntries.Add(refEntry);
+            }
+
+            if (!refEntries.Any())
+                return result;
+
+            var strRefEntries = string.Join(",", refEntries);
+
+            string sql = $@"
+        SELECT T0.DocNum AS ProdOrderNum
+        FROM OWOR T0
+        INNER JOIN IGN1 T1 ON T1.BaseType = 202 AND T1.BaseEntry = T0.DocEntry
+        INNER JOIN OIGN T2 ON T2.DocEntry = T1.DocEntry
+        WHERE T0.DocEntry IN ({strRefEntries})
+        ORDER BY T0.DocNum DESC
+    ";
+
+            var rs = (Recordset)oCompany.GetBusinessObject(BoObjectTypes.BoRecordset);
+            rs.DoQuery(sql);
+
+            while (!rs.EoF)
+            {
+                result.Add(Convert.ToInt32(rs.Fields.Item("ProdOrderNum").Value));
+                rs.MoveNext();
+            }
+
+            return result;
+        }
+
         public static bool UpdateSubOrder(Company oCompany, int docEntry)
         {
             SAPbobsCOM.ProductionOrders oProd = null;
@@ -302,11 +391,13 @@ namespace ProductionOrderAddOn.Services
                 var rs = (Recordset)oCompany.GetBusinessObject(BoObjectTypes.BoRecordset);
                 if (!oProd.GetByKey(docEntry))
                     throw new InvalidOperationException($"Production Order DocEntry {docEntry} not found.");
-                
+
+                var refEntries = new List<int>();
                 for (int i = 0; i < oProd.DocumentReferences.Count; i++)
                 {
                     oProd.DocumentReferences.SetCurrentLine(i);
                     int refEntry = int.Parse(oProd.DocumentReferences.ReferencedDocEntry.ToString());
+                    refEntries.Add(refEntry);
                     double newPlanQty = 0;
 
                     string sql = $"SELECT T1.PlannedQty FROM OWOR T0 JOIN WOR1 T1 ON T1.DocEntry = T0.U_T2_Ref_Production AND T1.ItemCode = T0.ItemCode WHERE T0.DocEntry = {oProd.DocumentReferences.ReferencedDocEntry} ";
@@ -315,10 +406,12 @@ namespace ProductionOrderAddOn.Services
                     if (!rs.EoF)
                     {
                         newPlanQty = (double)rs.Fields.Item("PlannedQty").Value;
+                        UpdatePoQty(oCompany,refEntry,newPlanQty);
                     }
 
-                    UpdatePoQty(oCompany,refEntry,newPlanQty);
                 }
+
+                //if (!refEntries.Any()) return false;
 
                 return true;
             }

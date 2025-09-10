@@ -33,7 +33,6 @@ namespace ProductionOrderAddOn
             oCreationPackage.Position = -1;
             
             Application.SBO_Application.ItemEvent += SBO_Application_ItemEvent;
-            Application.SBO_Application.FormDataEvent += SBO_Application_FormDataEvent;
 
             oMenus = oMenuItem.SubMenus;
 
@@ -62,32 +61,6 @@ namespace ProductionOrderAddOn
             catch (Exception er)
             { //  Menu already exists
                 Application.SBO_Application.SetStatusBarMessage("Menu Already Exists", SAPbouiCOM.BoMessageTime.bmt_Short, true);
-            }
-        }
-
-        public void SBO_Application_FormDataEvent(ref SAPbouiCOM.BusinessObjectInfo BusinessObjectInfo, out bool BubbleEvent)
-        {
-            BubbleEvent = true;
-
-            try
-            {
-                if (BusinessObjectInfo.FormTypeEx == "65211" // Production Order
-                    && BusinessObjectInfo.EventType == SAPbouiCOM.BoEventTypes.et_FORM_DATA_UPDATE
-                    && !BusinessObjectInfo.BeforeAction
-                    && BusinessObjectInfo.ActionSuccess)
-                {
-                    if (!string.IsNullOrWhiteSpace(BusinessObjectInfo.ObjectKey))
-                    {
-                        int docEntry = ExtractDocEntry(BusinessObjectInfo.ObjectKey); // from AbsoluteEntry
-                        CancelSubOrder(docEntry);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Application.SBO_Application.StatusBar.SetText( ex.Message,
-                    SAPbouiCOM.BoMessageTime.bmt_Long,
-                    SAPbouiCOM.BoStatusBarMessageType.smt_Error);
             }
         }
 
@@ -120,17 +93,73 @@ namespace ProductionOrderAddOn
                     ImportForm activeForm = new ImportForm();
                     activeForm.Show();
                 }
-                ////Check if it's the Cancel menu (1283 is the system menu ID for Cancel)
-                //if (pVal.MenuUID == "1284" && !pVal.BeforeAction)
-                //{
-                //    // Check if the active form is Production Order
-                //    SAPbouiCOM.Form oForm = Application.SBO_Application.Forms.ActiveForm;
-                //    if (oForm.TypeEx == "65211") // 65211 = Production Order form type
-                //    {
-                //        CancelSubOrder();
+                if (pVal.MenuUID == "1284" && pVal.BeforeAction)
+                {
+                    // Check if the active form is Production Order
+                    SAPbouiCOM.Form oForm = Application.SBO_Application.Forms.ActiveForm;
+                    if (oForm.TypeEx == "65211") // 65211 = Production Order form type
+                    {
+                        SAPbouiCOM.DBDataSource ds = oForm.DataSources.DBDataSources.Item("OWOR");
+                        string docEntryStr = ds.GetValue("DocEntry", 0).Trim();
+                        if (int.TryParse(docEntryStr, out int docEntry))
+                        {
+                            string prodType = ds.GetValue("U_T2_PRODTYPE", 0).Trim();
+                            if (prodType == "FG")
+                            {
+                                Company oCompany = Services.CompanyService.GetCompany();
+                                List<string> messages = new List<string>();
+                                try
+                                {
+                                    var canceledDocs = ProductionOrderSapService.GetSubCanceled(oCompany, docEntry);
+                                    if (canceledDocs.Any())
+                                    {
+                                        string label = canceledDocs.Count > 1 ? "Production Orders" : "Production Order";
+                                        string verb = canceledDocs.Count > 1 ? "are" : "is";
+                                        messages.Add($"{label} ({string.Join(", ", canceledDocs)}) {verb} canceled or closed.");
+                                    }
 
-                //    }
-                //}
+                                    var receiptedDocs = ProductionOrderSapService.GetSubReceipted(oCompany, docEntry);
+                                    if (receiptedDocs.Any())
+                                    {
+                                        string label = receiptedDocs.Count > 1 ? "Production Orders" : "Production Order";
+                                        string verb = receiptedDocs.Count > 1 ? "already have" : "already has";
+                                        messages.Add($"{label} ({string.Join(", ", receiptedDocs)}) {verb} Receipt from Production.");
+                                    }
+
+                                    if (messages.Any())
+                                    {
+                                        string finalMsg = string.Join("\n", messages);
+                                        Application.SBO_Application.MessageBox(finalMsg);
+                                        BubbleEvent = false; // 🚫 cancel here
+                                        return;
+                                    }
+                                }
+                                catch (Exception e)
+                                {
+                                    Application.SBO_Application.MessageBox(e.Message);
+                                }
+
+                            }
+                        }
+                    }
+                }
+                if (pVal.MenuUID == "1284" && !pVal.BeforeAction)
+                {
+                    // Check if the active form is Production Order
+                    SAPbouiCOM.Form oForm = Application.SBO_Application.Forms.ActiveForm;
+                    if (oForm.TypeEx == "65211") // 65211 = Production Order form type
+                    {
+                        SAPbouiCOM.DBDataSource ds = oForm.DataSources.DBDataSources.Item("OWOR");
+                        string status = ds.GetValue("Status", 0).Trim();
+                        string prodType = ds.GetValue("U_T2_PRODTYPE", 0).Trim();
+                        if (status == "C" && prodType == "FG")
+                        {
+                            int docEntry = 0;
+                            if (int.TryParse(ds.GetValue("DocEntry", 0).Trim(), out int parsedEntry)) docEntry = parsedEntry;
+                            CancelSubOrder(docEntry);
+                        }
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -145,16 +174,64 @@ namespace ProductionOrderAddOn
             // Production Order Form
             if (pVal.FormTypeEx == "65211")
             {
+                if (pVal.EventType == SAPbouiCOM.BoEventTypes.et_FORM_ACTIVATE && pVal.BeforeAction == false)
+                {
+                    SAPbouiCOM.Form oForm = Application.SBO_Application.Forms.Item(FormUID);
+
+                    // Check if form is in Add Mode (new document)
+                    if (oForm.Mode == SAPbouiCOM.BoFormMode.fm_ADD_MODE)
+                    {
+                        _oldStatus = "";
+                        _oldQty = 0;
+                        _pb = null;
+                    }
+                }
+
                 if (pVal.EventType == SAPbouiCOM.BoEventTypes.et_ITEM_PRESSED && pVal.BeforeAction && pVal.ItemUID == "1")
                 {
-                    UpdateVarHandler(FormUID);
+                    SAPbouiCOM.Form oForm = Application.SBO_Application.Forms.Item(FormUID);
+
+                    // ✅ Run only in UPDATE MODE
+                    if (oForm.Mode == SAPbouiCOM.BoFormMode.fm_UPDATE_MODE)
+                    {
+                        BubbleEvent = BeforeUpdateHandler(FormUID);
+                    }
                 }
-                
+
+                if (pVal.ItemUID == "10" && pVal.EventType == SAPbouiCOM.BoEventTypes.et_COMBO_SELECT)
+                {
+                    SAPbouiCOM.Form oForm = Application.SBO_Application.Forms.Item(FormUID);
+                    SAPbouiCOM.DBDataSource ds = oForm.DataSources.DBDataSources.Item("OWOR");
+                    var status = ds.GetValue("Status", 0).Trim();
+                    var prodType = ds.GetValue("U_T2_PRODTYPE", 0).Trim();
+                    if (prodType == "FG")
+                    {
+                        if (pVal.BeforeAction)
+                        {
+                            // Save current (old) value before change
+                            _oldStatus = status;
+                        }
+                        else
+                        {
+                            // After change → validate new value
+                            string newValue = status;
+
+                            if (newValue == "P" && _oldStatus == "R")
+                            {
+                                SAPbouiCOM.ComboBox combo = (SAPbouiCOM.ComboBox)oForm.Items.Item("10").Specific;
+                                combo.Select(_oldStatus, SAPbouiCOM.BoSearchKey.psk_ByValue);
+                                oForm.Mode = SAPbouiCOM.BoFormMode.fm_OK_MODE;
+                                Application.SBO_Application.SetStatusBarMessage("Can't change status of Finish Good from Released to Planned.", SAPbouiCOM.BoMessageTime.bmt_Medium, false);
+                            }
+                        }
+                    }
+                }
+
                 if (pVal.EventType == SAPbouiCOM.BoEventTypes.et_ITEM_PRESSED && pVal.ActionSuccess && pVal.ItemUID == "1")
                 {
                     GenerateHandler(FormUID);
                 }
-                
+
             }
         }
 
@@ -206,34 +283,89 @@ namespace ProductionOrderAddOn
             }
         }
 
-        private void UpdateVarHandler(string FormUID)
+        private bool BeforeUpdateHandler(string FormUID)
         {
+            bool result = true; // ✅ Default allow
             try
             {
+                if (_pb != null) { _pb.Stop(); _pb = null; }
                 Company oCompany = Services.CompanyService.GetCompany();
-                if(_pb != null) { _pb.Stop();_pb = null; }
-                _pb = Application.SBO_Application.StatusBar.CreateProgressBar("", 0, false);
+                _pb = Application.SBO_Application.StatusBar.CreateProgressBar("Validating Production Order...", 0, false);
 
                 SAPbouiCOM.Form oForm = Application.SBO_Application.Forms.Item(FormUID);
                 SAPbouiCOM.DBDataSource ds = oForm.DataSources.DBDataSources.Item("OWOR");
+
                 string docEntryStr = ds.GetValue("DocEntry", 0).Trim();
-                
-                int docEntry;
-                if (int.TryParse(docEntryStr, out docEntry))
+                if (int.TryParse(docEntryStr, out int docEntry) && docEntry > 0)
                 {
+                    // 🔹 Load old values from DB
                     var oRS = (SAPbobsCOM.Recordset)oCompany.GetBusinessObject(SAPbobsCOM.BoObjectTypes.BoRecordset);
-                    oRS.DoQuery($"SELECT Status,PlannedQty FROM OWOR WHERE DocEntry = {docEntry}");
+                    oRS.DoQuery($"SELECT Status, PlannedQty FROM OWOR WHERE DocEntry = {docEntry}");
+
                     if (!oRS.EoF)
                     {
                         _oldStatus = oRS.Fields.Item("Status").Value.ToString();
                         _oldQty = (double)oRS.Fields.Item("PlannedQty").Value;
                     }
+
+                    // 🔹 Get new values from form buffer
+                    string newStatus = ds.GetValue("Status", 0).Trim();
+                    var prodType = ds.GetValue("U_T2_PRODTYPE", 0).Trim();
+                    string isImported = ds.GetValue("U_T2_Is_Import", 0).Trim();
+                    double plannedQty = 0;
+                    double.TryParse(ds.GetValue("PlannedQty", 0).Trim(), out plannedQty);
+
+                    // 🔹 Checks
+                    if (_oldStatus != newStatus && newStatus == "R" && prodType == "FG" && isImported == "N")
+                    {
+                        int resultDiag = Application.SBO_Application.MessageBox(
+                            "This action will generate sub production orders. Do you want to continue?",
+                            1, "Yes", "No"
+                        );
+                        result = (resultDiag == 1);
+                    }
+                    else if (newStatus == "R" && prodType == "FG" && _oldQty != plannedQty)
+                    {
+                        int resultDiag = Application.SBO_Application.MessageBox(
+                            "This action will affect the related sub production orders. Do you want to continue?",
+                            1, "Yes", "No"
+                        );
+                        //result = (resultDiag == 1);
+                        if (resultDiag == 1)
+                        {
+                            var canceledDoc = ProductionOrderSapService.GetSubCanceled(oCompany, docEntry);
+                            if (canceledDoc.Any())
+                            {
+                                var docNums = string.Join(", ", canceledDoc);
+                                throw new Exception(
+                                    $"{(canceledDoc.Count > 1 ? "Production Orders" : "Production Order")} ( {docNums} ) {(canceledDoc.Count > 1 ? "are" : "is")} canceled."
+                                );
+                            }
+
+                            result = true;
+                        }
+                        else
+                        {
+                            result = false;
+                        }
+                    }
                 }
+                else
+                {
+                    // 🔹 New document: reset values but allow add
+                    _oldStatus = string.Empty;
+                    _oldQty = 0;
+                    result = true;
+                }
+
+                return result;
             }
             catch (Exception ex)
             {
-                Application.SBO_Application.StatusBar.SetText(ex.Message,
-                    SAPbouiCOM.BoMessageTime.bmt_Short, SAPbouiCOM.BoStatusBarMessageType.smt_Error);
+                Application.SBO_Application.MessageBox(ex.Message);
+                //Application.SBO_Application.StatusBar.SetText(ex.Message,
+                //    SAPbouiCOM.BoMessageTime.bmt_Long, SAPbouiCOM.BoStatusBarMessageType.smt_Error);
+                return false; // Fail safe: block on exception
             }
             finally
             {
@@ -267,79 +399,122 @@ namespace ProductionOrderAddOn
                     if (_oldStatus != newStatus && newStatus == "R" && prodType == "FG" && isImported == "N")
                     {
                         isGenerate = true;
-                        // After update sukses, ambil status baru dan bandingkan
-                        int result = Application.SBO_Application.MessageBox(
-                            "This action will generate sub production orders. Do you want to continue?",
-                            1, // default button = first option
-                            "Yes",
-                            "No"
-                        );
+                        // Tambahkan proses kamu di sini
+                        if (_pb != null) { _pb.Stop(); _pb = null; }
+                        _pb = Application.SBO_Application.StatusBar.CreateProgressBar("Generating sub-orders...", 100, false);
 
-                        if (result == 1) // User clicked "Yes"
+                        // Generate suborder
+                        _pb.Value = 0;
+                        _pb.Text = "Generating Sub Production Orders...";
+                        var listDoc = ProductionOrderSapService.GenerateSubOrder(oCompany, docEntry);
+                        foreach (var item in listDoc)
                         {
-                            // Tambahkan proses kamu di sini
-                            if (_pb != null) { _pb.Stop(); _pb = null; }
-                            _pb = Application.SBO_Application.StatusBar.CreateProgressBar("Generating sub-orders...", 100, false);
-
-                            // Generate suborder
-                            _pb.Value = 0;
-                            _pb.Text = "Generating Sub Production Orders...";
-                            var listDoc = ProductionOrderSapService.GenerateSubOrder(oCompany, docEntry);
-                            foreach (var item in listDoc)
-                            {
-                                int wipEntry = item.Key;
-                                ProductionOrderSapService.LinkWipToFG(oCompany, docEntry, wipEntry);
-                            }
-
-                            if (listDoc != null && listDoc.Any())
-                            {
-                                string remarks = "Sub Production Orders: " + string.Join(" | ", listDoc.Values);
-                                ProductionOrderSapService.UpdateRemarks(oCompany, docEntry, remarks);
-
-                            }
-
-                            _pb.Value = 100; // Ensure it reaches the end
-                            _pb.Text = "Done.";
-                            _pb.Stop();
-
-                            RefreshFormProdOrder(oForm, docEntry, "Sub production orders successfully genareted.");
+                            int wipEntry = item.Key;
+                            ProductionOrderSapService.LinkWipToFG(oCompany, docEntry, wipEntry);
                         }
-                        else
+
+                        if (listDoc != null && listDoc.Any())
                         {
-                            ResetStatus(oCompany, FormUID);
+                            string remarks = "Sub Production Orders: " + string.Join(" | ", listDoc.Values);
+                            ProductionOrderSapService.UpdateRemarks(oCompany, docEntry, remarks);
+
                         }
+
+                        _pb.Value = 100; // Ensure it reaches the end
+                        _pb.Text = "Done.";
+                        _pb.Stop();
+
+                        RefreshFormProdOrder(oForm, docEntry, "Sub production orders successfully genareted.");
+                        //// After update sukses, ambil status baru dan bandingkan
+                        //int result = Application.SBO_Application.MessageBox(
+                        //    "This action will generate sub production orders. Do you want to continue?",
+                        //    1, // default button = first option
+                        //    "Yes",
+                        //    "No"
+                        //);
+
+                        //if (result == 1) // User clicked "Yes"
+                        //{
+                        //    // Tambahkan proses kamu di sini
+                        //    if (_pb != null) { _pb.Stop(); _pb = null; }
+                        //    _pb = Application.SBO_Application.StatusBar.CreateProgressBar("Generating sub-orders...", 100, false);
+
+                        //    // Generate suborder
+                        //    _pb.Value = 0;
+                        //    _pb.Text = "Generating Sub Production Orders...";
+                        //    var listDoc = ProductionOrderSapService.GenerateSubOrder(oCompany, docEntry);
+                        //    foreach (var item in listDoc)
+                        //    {
+                        //        int wipEntry = item.Key;
+                        //        ProductionOrderSapService.LinkWipToFG(oCompany, docEntry, wipEntry);
+                        //    }
+
+                        //    if (listDoc != null && listDoc.Any())
+                        //    {
+                        //        string remarks = "Sub Production Orders: " + string.Join(" | ", listDoc.Values);
+                        //        ProductionOrderSapService.UpdateRemarks(oCompany, docEntry, remarks);
+
+                        //    }
+
+                        //    _pb.Value = 100; // Ensure it reaches the end
+                        //    _pb.Text = "Done.";
+                        //    _pb.Stop();
+
+                        //    RefreshFormProdOrder(oForm, docEntry, "Sub production orders successfully genareted.");
+                        //}
+                        //else
+                        //{
+                        //    ResetStatus(oCompany, FormUID);
+                        //}
                     }
                     else if (newStatus == "R" && prodType == "FG" && _oldQty != plannedQty)
                     {
                         isGenerate = false;
-                        int result = Application.SBO_Application.MessageBox(
-                            "This action will affect the related sub production orders. Do you want to continue?",
-                            1, // default button = first option
-                            "Yes",
-                            "No"
-                        );
-                        if (result == 1) // User clicked "Yes"
-                        {
-                            // Tambahkan proses kamu di sini
-                            if (_pb != null) { _pb.Stop(); _pb = null; }
-                            _pb = Application.SBO_Application.StatusBar.CreateProgressBar("Updating sub-orders...", 100, false);
+                        // Tambahkan proses kamu di sini
+                        if (_pb != null) { _pb.Stop(); _pb = null; }
+                        _pb = Application.SBO_Application.StatusBar.CreateProgressBar("Updating sub-orders...", 100, false);
 
-                            // Generate suborder
-                            _pb.Value = 0;
-                            _pb.Text = "Updating WIP Production Orders...";
-                            if (!ProductionOrderSapService.UpdateSubOrder(oCompany, docEntry))
-                                throw new Exception("There is no documents updated.");
+                        // Generate suborder
+                        _pb.Value = 0;
+                        _pb.Text = "Updating WIP Production Orders...";
 
-                            _pb.Value = 100; // Ensure it reaches the end
-                            _pb.Text = "Done.";
-                            _pb.Stop();
+                        if (!ProductionOrderSapService.UpdateSubOrder(oCompany, docEntry))
+                            throw new Exception("There is no documents updated.");
 
-                            RefreshFormProdOrder(oForm, docEntry, "Sub production orders successfully updated.");
-                        }
-                        else
-                        {
-                            ResetQty(oCompany, FormUID);
-                        }
+                        _pb.Value = 100; // Ensure it reaches the end
+                        _pb.Text = "Done.";
+                        _pb.Stop();
+
+                        RefreshFormProdOrder(oForm, docEntry, "Sub production orders successfully updated.");
+                        //int result = Application.SBO_Application.MessageBox(
+                        //    "This action will affect the related sub production orders. Do you want to continue?",
+                        //    1, // default button = first option
+                        //    "Yes",
+                        //    "No"
+                        //);
+                        //if (result == 1) // User clicked "Yes"
+                        //{
+                        //    // Tambahkan proses kamu di sini
+                        //    if (_pb != null) { _pb.Stop(); _pb = null; }
+                        //    _pb = Application.SBO_Application.StatusBar.CreateProgressBar("Updating sub-orders...", 100, false);
+
+                        //    // Generate suborder
+                        //    _pb.Value = 0;
+                        //    _pb.Text = "Updating WIP Production Orders...";
+
+                        //    if (!ProductionOrderSapService.UpdateSubOrder(oCompany, docEntry))
+                        //        throw new Exception("There is no documents updated.");
+
+                        //    _pb.Value = 100; // Ensure it reaches the end
+                        //    _pb.Text = "Done.";
+                        //    _pb.Stop();
+
+                        //    RefreshFormProdOrder(oForm, docEntry, "Sub production orders successfully updated.");
+                        //}
+                        //else
+                        //{
+                        //    ResetQty(oCompany, FormUID);
+                        //}
                     }
                 }
                 if (oCompany.InTransaction)
@@ -377,6 +552,10 @@ namespace ProductionOrderAddOn
             int docEntry = 0;
             try
             {
+                if (!oCompany.InTransaction)
+                {
+                    oCompany.StartTransaction();
+                }
                 SAPbouiCOM.Form oForm = Application.SBO_Application.Forms.Item(FormUID);
                 SAPbouiCOM.DBDataSource ds = oForm.DataSources.DBDataSources.Item("OWOR");
 
@@ -386,10 +565,17 @@ namespace ProductionOrderAddOn
                     ProductionOrderSapService.UpdatePoStatus(oCompany,docEntry, BoProductionOrderStatusEnum.boposPlanned);
                     RefreshFormProdOrder(oForm, docEntry, $"Status reverted to planned.");
                 }
-
+                if (oCompany.InTransaction)
+                {
+                    oCompany.EndTransaction(BoWfTransOpt.wf_Commit);
+                }
             }
             catch (Exception)
             {
+                if (oCompany.InTransaction)
+                {
+                    oCompany.EndTransaction(BoWfTransOpt.wf_RollBack);
+                }
                 throw;
             }
         }
@@ -399,6 +585,10 @@ namespace ProductionOrderAddOn
             int docEntry = 0;
             try
             {
+                if (!oCompany.InTransaction)
+                {
+                    oCompany.StartTransaction();
+                }
                 SAPbouiCOM.Form oForm = Application.SBO_Application.Forms.Item(FormUID);
                 SAPbouiCOM.DBDataSource ds = oForm.DataSources.DBDataSources.Item("OWOR");
 
@@ -408,10 +598,17 @@ namespace ProductionOrderAddOn
                     ProductionOrderSapService.UpdatePoQty(oCompany, docEntry, _oldQty);
                     RefreshFormProdOrder(oForm, docEntry, $"Planned Quantity reverted to previous value: {_oldQty}");
                 }
-
+                if (oCompany.InTransaction)
+                {
+                    oCompany.EndTransaction(BoWfTransOpt.wf_Commit);
+                }
             }
             catch (Exception)
             {
+                if (oCompany.InTransaction)
+                {
+                    oCompany.EndTransaction(BoWfTransOpt.wf_RollBack);
+                }
                 throw;
             }
         }
