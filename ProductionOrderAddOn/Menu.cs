@@ -31,7 +31,7 @@ namespace ProductionOrderAddOn
             oCreationPackage.String = "Production Order Add On";
             oCreationPackage.Enabled = true;
             oCreationPackage.Position = -1;
-            
+
             Application.SBO_Application.ItemEvent += SBO_Application_ItemEvent;
 
             oMenus = oMenuItem.SubMenus;
@@ -115,7 +115,15 @@ namespace ProductionOrderAddOn
                                     {
                                         string label = canceledDocs.Count > 1 ? "Production Orders" : "Production Order";
                                         string verb = canceledDocs.Count > 1 ? "are" : "is";
-                                        messages.Add($"{label} ({string.Join(", ", canceledDocs)}) {verb} canceled or closed.");
+                                        messages.Add($"{label} ({string.Join(", ", canceledDocs)}) {verb} canceled.");
+                                    }
+
+                                    var closedDocs = ProductionOrderSapService.GetSubClosed(oCompany, docEntry);
+                                    if (closedDocs.Any())
+                                    {
+                                        string label = closedDocs.Count > 1 ? "Production Orders" : "Production Order";
+                                        string verb = closedDocs.Count > 1 ? "are" : "is";
+                                        messages.Add($"{label} ({string.Join(", ", closedDocs)}) {verb} closed.");
                                     }
 
                                     var receiptedDocs = ProductionOrderSapService.GetSubReceipted(oCompany, docEntry);
@@ -166,11 +174,11 @@ namespace ProductionOrderAddOn
                 Application.SBO_Application.MessageBox(ex.ToString(), 1, "Ok", "", "");
             }
         }
-        
+
         private void SBO_Application_ItemEvent(string FormUID, ref SAPbouiCOM.ItemEvent pVal, out bool BubbleEvent)
         {
             BubbleEvent = true;
-            
+
             // Production Order Form
             if (pVal.FormTypeEx == "65211")
             {
@@ -331,15 +339,29 @@ namespace ProductionOrderAddOn
                             1, "Yes", "No"
                         );
                         //result = (resultDiag == 1);
+                        List<string> messages = new List<string>();
                         if (resultDiag == 1)
                         {
-                            var canceledDoc = ProductionOrderSapService.GetSubCanceled(oCompany, docEntry);
-                            if (canceledDoc.Any())
+                            var canceledDocs = ProductionOrderSapService.GetSubCanceled(oCompany, docEntry);
+                            if (canceledDocs.Any())
                             {
-                                var docNums = string.Join(", ", canceledDoc);
-                                throw new Exception(
-                                    $"{(canceledDoc.Count > 1 ? "Production Orders" : "Production Order")} ( {docNums} ) {(canceledDoc.Count > 1 ? "are" : "is")} canceled."
-                                );
+                                string label = canceledDocs.Count > 1 ? "Production Orders" : "Production Order";
+                                string verb = canceledDocs.Count > 1 ? "are" : "is";
+                                messages.Add($"{label} ({string.Join(", ", canceledDocs)}) {verb} canceled.");
+                            }
+
+                            var closedDocs = ProductionOrderSapService.GetSubClosed(oCompany, docEntry);
+                            if (closedDocs.Any())
+                            {
+                                string label = closedDocs.Count > 1 ? "Production Orders" : "Production Order";
+                                string verb = closedDocs.Count > 1 ? "are" : "is";
+                                messages.Add($"{label} ({string.Join(", ", closedDocs)}) {verb} closed.");
+                            }
+
+                            if (messages.Any())
+                            {
+                                string finalMsg = string.Join("\n", messages);
+                                throw new Exception(finalMsg);
                             }
 
                             result = true;
@@ -425,47 +447,6 @@ namespace ProductionOrderAddOn
                         _pb.Stop();
 
                         RefreshFormProdOrder(oForm, docEntry, "Sub production orders successfully genareted.");
-                        //// After update sukses, ambil status baru dan bandingkan
-                        //int result = Application.SBO_Application.MessageBox(
-                        //    "This action will generate sub production orders. Do you want to continue?",
-                        //    1, // default button = first option
-                        //    "Yes",
-                        //    "No"
-                        //);
-
-                        //if (result == 1) // User clicked "Yes"
-                        //{
-                        //    // Tambahkan proses kamu di sini
-                        //    if (_pb != null) { _pb.Stop(); _pb = null; }
-                        //    _pb = Application.SBO_Application.StatusBar.CreateProgressBar("Generating sub-orders...", 100, false);
-
-                        //    // Generate suborder
-                        //    _pb.Value = 0;
-                        //    _pb.Text = "Generating Sub Production Orders...";
-                        //    var listDoc = ProductionOrderSapService.GenerateSubOrder(oCompany, docEntry);
-                        //    foreach (var item in listDoc)
-                        //    {
-                        //        int wipEntry = item.Key;
-                        //        ProductionOrderSapService.LinkWipToFG(oCompany, docEntry, wipEntry);
-                        //    }
-
-                        //    if (listDoc != null && listDoc.Any())
-                        //    {
-                        //        string remarks = "Sub Production Orders: " + string.Join(" | ", listDoc.Values);
-                        //        ProductionOrderSapService.UpdateRemarks(oCompany, docEntry, remarks);
-
-                        //    }
-
-                        //    _pb.Value = 100; // Ensure it reaches the end
-                        //    _pb.Text = "Done.";
-                        //    _pb.Stop();
-
-                        //    RefreshFormProdOrder(oForm, docEntry, "Sub production orders successfully genareted.");
-                        //}
-                        //else
-                        //{
-                        //    ResetStatus(oCompany, FormUID);
-                        //}
                     }
                     else if (newStatus == "R" && prodType == "FG" && _oldQty != plannedQty)
                     {
@@ -486,35 +467,6 @@ namespace ProductionOrderAddOn
                         _pb.Stop();
 
                         RefreshFormProdOrder(oForm, docEntry, "Sub production orders successfully updated.");
-                        //int result = Application.SBO_Application.MessageBox(
-                        //    "This action will affect the related sub production orders. Do you want to continue?",
-                        //    1, // default button = first option
-                        //    "Yes",
-                        //    "No"
-                        //);
-                        //if (result == 1) // User clicked "Yes"
-                        //{
-                        //    // Tambahkan proses kamu di sini
-                        //    if (_pb != null) { _pb.Stop(); _pb = null; }
-                        //    _pb = Application.SBO_Application.StatusBar.CreateProgressBar("Updating sub-orders...", 100, false);
-
-                        //    // Generate suborder
-                        //    _pb.Value = 0;
-                        //    _pb.Text = "Updating WIP Production Orders...";
-
-                        //    if (!ProductionOrderSapService.UpdateSubOrder(oCompany, docEntry))
-                        //        throw new Exception("There is no documents updated.");
-
-                        //    _pb.Value = 100; // Ensure it reaches the end
-                        //    _pb.Text = "Done.";
-                        //    _pb.Stop();
-
-                        //    RefreshFormProdOrder(oForm, docEntry, "Sub production orders successfully updated.");
-                        //}
-                        //else
-                        //{
-                        //    ResetQty(oCompany, FormUID);
-                        //}
                     }
                 }
                 if (oCompany.InTransaction)
@@ -529,24 +481,24 @@ namespace ProductionOrderAddOn
                 {
                     oCompany.EndTransaction(BoWfTransOpt.wf_RollBack);
                 }
-                System.Threading.ThreadPool.QueueUserWorkItem(_ =>
-                {
-                    System.Threading.Thread.Sleep(1000); 
-                    Application.SBO_Application.StatusBar.SetText(ex.Message,
-                    SAPbouiCOM.BoMessageTime.bmt_Long, SAPbouiCOM.BoStatusBarMessageType.smt_Error);
-                });
-                
+
+                Application.SBO_Application.MessageBox(ex.Message, 1, "OK");
+
                 if (isGenerate)
+                {
                     ResetStatus(oCompany, FormUID);
+                }
                 else
+                {
                     ResetQty(oCompany, FormUID);
+                }
             }
             finally
             {
-                if (_pb != null) { _pb.Stop();_pb = null; }
+                if (_pb != null) { _pb.Stop(); _pb = null; }
             }
         }
-        
+
         private void ResetStatus(Company oCompany, string FormUID)
         {
             int docEntry = 0;
@@ -562,7 +514,7 @@ namespace ProductionOrderAddOn
                 string docEntryStr = ds.GetValue("DocEntry", 0).Trim();
                 if (int.TryParse(docEntryStr, out docEntry))
                 {
-                    ProductionOrderSapService.UpdatePoStatus(oCompany,docEntry, BoProductionOrderStatusEnum.boposPlanned);
+                    ProductionOrderSapService.UpdatePoStatus(oCompany, docEntry, BoProductionOrderStatusEnum.boposPlanned);
                     RefreshFormProdOrder(oForm, docEntry, $"Status reverted to planned.");
                 }
                 if (oCompany.InTransaction)
@@ -660,6 +612,5 @@ namespace ProductionOrderAddOn
                 if (_pb != null) { _pb.Stop(); _pb = null; }
             }
         }
-
     }
 }

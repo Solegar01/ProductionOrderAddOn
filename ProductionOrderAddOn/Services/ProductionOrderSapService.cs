@@ -204,13 +204,114 @@ namespace ProductionOrderAddOn.Services
                         WHERE t0.DocEntry IN ({inClause})
                             AND ISNULL(t2.U_T2_ITEM_GROUP, '') = '1'
                         ORDER BY t0.PostDate DESC, t2.Code;";
+            
+            string sqlNonWIP = $@"
+                        SELECT
+                            t0.DocEntry      AS RefProdEntry,
+                            t0.DocNum      AS RefProdNum,
+                            t2.Code        AS ProdNo,
+                            t2.ItemName    AS ProdDesc,
+                            t3.PlannedQty  AS Qty,
+                            CAST(t0.PostDate AS DATE) AS OrderDate
+                        FROM OWOR  t0
+                        INNER JOIN OITT t1 ON t0.ItemCode = t1.Code
+                        INNER JOIN ITT1 t2 ON t1.Code     = t2.Father
+                        INNER JOIN WOR1 t3 ON t3.DocEntry = t0.DocEntry
+                                            AND t3.ItemCode = t2.Code
+                        INNER JOIN OITM t4 ON t4.ItemCode = t2.Code
+                        WHERE t0.DocEntry IN ({inClause})
+                            AND ISNULL(t2.U_T2_ITEM_GROUP, '') <> '1'
+                            AND t4.TreeType = 'P'
+                        ORDER BY t0.PostDate DESC, t2.Code;";
 
             try
             {
                 var result = new List<ProductionOrderModel>();
                 var data = SapQueryHelper.ExecuteQuery(sql, oCompany);
+                var dataNonWIP = SapQueryHelper.ExecuteQuery(sqlNonWIP, oCompany);
 
                 foreach (var row in data)
+                {
+                    var newOrder = new ProductionOrderModel
+                    {
+                        RefProdEntry = row["RefProdEntry"].ToString(),
+                        RefProdNum = row["RefProdNum"].ToString(),
+                        ProdNo = row["ProdNo"].ToString(),
+                        ProdDesc = row["ProdDesc"].ToString(),
+                        Qty = Convert.ToDouble(row["Qty"]),
+                        OrderDate = Convert.ToDateTime(row["OrderDate"]),
+                        ProdType = ProductionType.WIP,
+                    };
+                    result.Add(newOrder);
+                }
+
+                foreach (var item in dataNonWIP)
+                {
+                    int tempDocEntry = int.Parse(item["RefProdEntry"].ToString());
+                    string tempItem = item["ProdNo"].ToString();
+                    double tempQty = Convert.ToDouble(item["Qty"]);
+                    var resNonWip = GetRecursiveProductionOrders(oCompany, tempDocEntry, tempItem, tempQty);
+                    if (resNonWip != null && resNonWip.Any())
+                    {
+                        result.AddRange(resNonWip);
+                    }
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Error while retrieving Sub production orders: " + ex.Message, ex);
+            }
+        }
+
+        public static List<ProductionOrderModel> GetRecursiveProductionOrders(Company oCompany, int docEntry, string itemCode, double qty)
+        {
+            string sqlNonWip = $@"
+                            SELECT 
+                                T1.VisOrder,
+                                T1.Code AS ItemCode,
+                                CAST(T1.Quantity * {qty} AS DECIMAL(19,6)) AS PlannedQty
+                            FROM OITT T0
+                            INNER JOIN ITT1 T1 ON T0.Code = T1.Father
+                            INNER JOIN OITM T2 ON T2.ItemCode = T1.Code
+                            WHERE T0.Code = '{itemCode}'
+                              AND T2.TreeType = 'P'
+                              AND ISNULL(T1.U_T2_ITEM_GROUP,'') <> '1' ";
+
+            string sqlWip = $@"
+                            SELECT 
+                                T3.DocEntry AS RefProdEntry,
+                                T3.DocNum AS RefProdNum,
+                                T1.Code AS ProdNo,
+                                T2.ItemName AS ProdDesc,
+                                CAST(T1.Quantity * {qty} AS DECIMAL(19,6))  AS Qty,
+                                CAST(T3.PostDate AS DATE) AS OrderDate
+                            FROM OITT T0
+                            INNER JOIN ITT1 T1 ON T0.Code = T1.Father
+                            INNER JOIN OITM T2 ON T2.ItemCode = T1.Code
+                            INNER JOIN OWOR T3 ON T3.DocEntry = {docEntry}
+                            WHERE T0.Code = '{itemCode}'
+                              AND T2.TreeType = 'P'
+                              AND ISNULL(T1.U_T2_ITEM_GROUP,'') = '1' ";
+            try
+            {
+                var result = new List<ProductionOrderModel>();
+                var dataNonWip = SapQueryHelper.ExecuteQuery(sqlNonWip, oCompany);
+                var dataWip = SapQueryHelper.ExecuteQuery(sqlWip, oCompany);
+
+                foreach (var row in dataNonWip)
+                {
+                    string code = row["ItemCode"].ToString();
+                    double pQty = double.Parse(row["PlannedQty"].ToString());
+                    var res = GetRecursiveProductionOrders(oCompany, docEntry, code, pQty);
+                    if (res != null && res.Any())
+                    {
+                        result.AddRange(res);
+                    }
+                }
+
+                foreach (var row in dataWip)
                 {
                     result.Add(new ProductionOrderModel
                     {
@@ -316,6 +417,49 @@ namespace ProductionOrderAddOn.Services
 
                 var strRefEntries = string.Join(",", refEntries);
                 string sql = $"SELECT DocNum AS ProdOrderNum FROM OWOR WHERE Status = 'C' AND DocEntry IN ({strRefEntries}) ORDER BY DocNum DESC ";
+
+                rs.DoQuery(sql);
+                while (!rs.EoF)
+                {
+                    result.Add((int)rs.Fields.Item("ProdOrderNum").Value);
+                    rs.MoveNext();
+                }
+
+                return result;
+            }
+            catch (Exception)
+            {
+
+                throw;
+            }
+        }
+
+        public static List<int> GetSubClosed(Company oCompany, int docEntry)
+        {
+            if (docEntry == 0)
+                throw new ArgumentNullException(nameof(docEntry));
+
+            SAPbobsCOM.ProductionOrders oProd = null;
+            var result = new List<int>();
+            try
+            {
+                oProd = (ProductionOrders)oCompany.GetBusinessObject(BoObjectTypes.oProductionOrders);
+                var rs = (Recordset)oCompany.GetBusinessObject(BoObjectTypes.BoRecordset);
+                if (!oProd.GetByKey(docEntry))
+                    throw new InvalidOperationException($"Production Order DocEntry {docEntry} not found.");
+
+                var refEntries = new List<int>();
+                for (int i = 0; i < oProd.DocumentReferences.Count; i++)
+                {
+                    oProd.DocumentReferences.SetCurrentLine(i);
+                    int refEntry = int.Parse(oProd.DocumentReferences.ReferencedDocEntry.ToString());
+                    refEntries.Add(refEntry);
+                }
+
+                if (!refEntries.Any()) return result;
+
+                var strRefEntries = string.Join(",", refEntries);
+                string sql = $"SELECT DocNum AS ProdOrderNum FROM OWOR WHERE Status = 'L' AND DocEntry IN ({strRefEntries}) ORDER BY DocNum DESC ";
 
                 rs.DoQuery(sql);
                 while (!rs.EoF)
