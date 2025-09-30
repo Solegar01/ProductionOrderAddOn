@@ -271,7 +271,7 @@ namespace ProductionOrderAddOn.Services
                             SELECT 
                                 T1.VisOrder,
                                 T1.Code AS ItemCode,
-                                CAST(T1.Quantity * {qty} AS DECIMAL(19,6)) AS PlannedQty
+                                CAST(((T1.Quantity * {qty}) / T0.Qauntity) AS DECIMAL(19,6)) AS PlannedQty
                             FROM OITT T0
                             INNER JOIN ITT1 T1 ON T0.Code = T1.Father
                             INNER JOIN OITM T2 ON T2.ItemCode = T1.Code
@@ -285,7 +285,7 @@ namespace ProductionOrderAddOn.Services
                                 T3.DocNum AS RefProdNum,
                                 T1.Code AS ProdNo,
                                 T2.ItemName AS ProdDesc,
-                                CAST(T1.Quantity * {qty} AS DECIMAL(19,6))  AS Qty,
+                                CAST(((T1.Quantity * {qty})/T0.Qauntity) AS DECIMAL(19,6))  AS Qty,
                                 CAST(T3.PostDate AS DATE) AS OrderDate
                             FROM OITT T0
                             INNER JOIN ITT1 T1 ON T0.Code = T1.Father

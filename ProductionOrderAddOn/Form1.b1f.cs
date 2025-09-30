@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
+using ProductionOrderAddOn.Helpers;
 using ProductionOrderAddOn.Models;
 using ProductionOrderAddOn.Services;
 using SAPbobsCOM;
@@ -28,8 +29,6 @@ namespace ProductionOrderAddOn
         private SAPbouiCOM.StaticText LblPath;
         private SAPbouiCOM.Button BtnBrowse;
         private string FilePath;
-        private static SAPbouiCOM.ProgressBar _pb;
-        private static bool _userCanceled = false;
         private SAPbouiCOM.Button BtnRefresh;
         private SAPbouiCOM.Button BtnReset;
         private SAPbouiCOM.Button BtnProdOrderList;
@@ -58,7 +57,6 @@ namespace ProductionOrderAddOn
             this.BtnRefresh.ClickBefore += new SAPbouiCOM._IButtonEvents_ClickBeforeEventHandler(this.BtnRefresh_ClickBefore);
             this.BtnReset = ((SAPbouiCOM.Button)(this.GetItem("BtnReset").Specific));
             this.BtnReset.ClickBefore += new SAPbouiCOM._IButtonEvents_ClickBeforeEventHandler(this.BtnReset_ClickBefore);
-            SAPbouiCOM.Framework.Application.SBO_Application.ProgressBarEvent += new SAPbouiCOM._IApplicationEvents_ProgressBarEventEventHandler(this.OnProgressBarEvent);
             this.BtnProdOrderList = ((SAPbouiCOM.Button)(this.GetItem("BtnImpList").Specific));
             this.BtnProdOrderList.ClickBefore += new SAPbouiCOM._IButtonEvents_ClickBeforeEventHandler(this.BtnProdOrderList_ClickBefore);
             this.OnCustomInitialize();
@@ -98,14 +96,14 @@ namespace ProductionOrderAddOn
             BubbleEvent = true;
             try
             {
-                if (!this.ImportFromExcelProdOrder())
+                if (!this.ImportFromExcelProdOrder(pVal.FormUID))
                 {
                     ClearDataModel();
                 }
                 else
                 {
-                    this.SetDataGrid();
-                    if(this.ImportToSAP())
+                    this.SetDataGrid(pVal.FormUID);
+                    if(this.ImportToSAP(pVal.FormUID))
                         this.Reset();
                 }
             }
@@ -119,17 +117,7 @@ namespace ProductionOrderAddOn
         private void BtnBrowse_ClickBefore(object sboObject, SAPbouiCOM.SBOItemEventArg pVal, out bool BubbleEvent)
         {
             BubbleEvent = true;
-
-
-            HandleBrowse();
-        }
-
-        private void OnProgressBarEvent(ref SAPbouiCOM.ProgressBarEvent pVal, out bool BubbleEvent)
-        {
-            BubbleEvent = true;
-            if (pVal.EventType == SAPbouiCOM.BoProgressBarEventTypes.pbet_ProgressBarStopped &&
-                pVal.BeforeAction)
-                _userCanceled = true;
+            HandleBrowse(pVal.FormUID);
         }
 
         private void DateValidateAfter(object sboObject, SAPbouiCOM.SBOItemEventArg pVal)
@@ -145,10 +133,10 @@ namespace ProductionOrderAddOn
             {
                 if (!string.IsNullOrEmpty(FilePath))
                 {
-                    if (!this.ImportFromExcelProdOrder())
+                    if (!this.ImportFromExcelProdOrder(pVal.FormUID))
                         ClearDataModel();
                     else
-                        this.SetDataGrid();
+                        this.SetDataGrid(pVal.FormUID);
                 }
             }
             catch (Exception ex)
@@ -176,40 +164,19 @@ namespace ProductionOrderAddOn
         #endregion
 
         #region Functions
-        private void StartProgressBar(string title)
-        {
-            _pb = Application.SBO_Application.StatusBar
-                      .CreateProgressBar($"{title}…", 0, false);
-            _userCanceled = false;
-
-            if (_userCanceled)
-                throw new OperationCanceledException();
-
-            _pb.Text = $"{title}…";
-        }
-
-        private void StopProgressBar()
-        {
-            _pb?.Stop();
-            if (_pb != null)
-                System.Runtime.InteropServices.Marshal.ReleaseComObject(_pb);
-            _pb = null;
-            _userCanceled = false;
-        }
-
-        private void HandleBrowse()
+        private void HandleBrowse(string formUID)
         {
             try
             {
                 if (this.GetPathFile())
                 {
-                    if (!this.ImportFromExcelProdOrder())
+                    if (!this.ImportFromExcelProdOrder(formUID))
                     {
                         ClearDataModel();
                     }
                     else
                     {
-                        this.SetDataGrid();
+                        this.SetDataGrid(formUID);
 
                         Application.SBO_Application.StatusBar.SetText(
                             "Data imported successfully.",
@@ -227,7 +194,6 @@ namespace ProductionOrderAddOn
             }
 
         }
-
         private void DateRangeValidation(SAPbouiCOM.SBOItemEventArg pVal)
         {
             DateTime? from = ParseDate_yyyyMMdd(TxtFrom.Value);
@@ -254,9 +220,10 @@ namespace ProductionOrderAddOn
         private bool GetPathFile()
         {
             bool res = false;
+            SAPbouiCOM.Form oForm = Application.SBO_Application.Forms.ActiveForm;
             try
             {
-                StartProgressBar("Get file path");
+                FormHelper.StartLoading(oForm, "Get path file...", 0, false);
 
                 Thread t = new Thread(() =>
                 {
@@ -300,16 +267,17 @@ namespace ProductionOrderAddOn
             }
             finally
             {
-                StopProgressBar();
+                FormHelper.FinishLoading(oForm);
             }
         }
 
-        private bool ImportFromExcelProdOrder()
+        private bool ImportFromExcelProdOrder(string formUID)
         {
             bool res = false;
+            SAPbouiCOM.Form oForm = Application.SBO_Application.Forms.Item(formUID);
             try
             {
-                StartProgressBar("Importing data");
+                FormHelper.StartLoading(oForm, "Importing data ...", 0, false);
 
                 string fromStr = TxtFrom.Value;
                 string toStr = TxtTo.Value;
@@ -337,14 +305,15 @@ namespace ProductionOrderAddOn
             }
             finally
             {
-                StopProgressBar();
+                FormHelper.FinishLoading(oForm);
             }
         }
 
-        private bool ImportToSAP()
+        private bool ImportToSAP(string formUID)
         {
             bool success = false;
             Company oCompany = null;
+            SAPbouiCOM.Form oForm = Application.SBO_Application.Forms.Item(formUID);
             try
             {
                 oCompany = Services.CompanyService.GetCompany();
@@ -364,11 +333,10 @@ namespace ProductionOrderAddOn
                     }
                     return false;
                 }
-
-                StartProgressBar("Importing data to SAP");
+                FormHelper.StartLoading(oForm, "Importing data to SAP", 0, false);
 
                 if (listData == null || listData.Count == 0)
-                    if (!this.ImportFromExcelProdOrder())
+                    if (!this.ImportFromExcelProdOrder(formUID))
                         ClearDataModel();
 
 
@@ -390,22 +358,25 @@ namespace ProductionOrderAddOn
 
                 foreach (var item in listData)
                 {
-                    var resultEntry = ProductionOrderSapService.CreateProductionOrder(oCompany, fileName, item);
-                    var listDoc = ProductionOrderSapService.GenerateSubOrder(oCompany, resultEntry, fileName);
-                    foreach (var dictionary in listDoc)
+                    if (item.Qty > 0)
                     {
-                        int wipEntry = dictionary.Key;
-                        ProductionOrderSapService.LinkWipToFG(oCompany, resultEntry, wipEntry);
+                        var resultEntry = ProductionOrderSapService.CreateProductionOrder(oCompany, fileName, item);
+                        var listDoc = ProductionOrderSapService.GenerateSubOrder(oCompany, resultEntry, fileName);
+                        foreach (var dictionary in listDoc)
+                        {
+                            int wipEntry = dictionary.Key;
+                            ProductionOrderSapService.LinkWipToFG(oCompany, resultEntry, wipEntry);
+                        }
+
+                        if (listDoc != null && listDoc.Any())
+                        {
+                            string remarks = "WIP Production Orders: " + string.Join(" | ", listDoc.Values);
+                            ProductionOrderSapService.UpdateRemarks(oCompany, resultEntry, remarks);
+
+                        }
+
+                        fgDocEntries.Add(resultEntry);
                     }
-
-                    if (listDoc != null && listDoc.Any())
-                    {
-                        string remarks = "WIP Production Orders: " + string.Join(" | ", listDoc.Values);
-                        ProductionOrderSapService.UpdateRemarks(oCompany, resultEntry, remarks);
-
-                    }
-
-                    fgDocEntries.Add(resultEntry);
                 }
 
                 if (fgDocEntries == null || fgDocEntries.Count == 0)
@@ -430,7 +401,7 @@ namespace ProductionOrderAddOn
             }
             finally
             {
-                StopProgressBar();
+                FormHelper.FinishLoading(oForm);
                 oCompany = null;
                 if (success)
                 {
@@ -513,17 +484,14 @@ namespace ProductionOrderAddOn
             }
         }
 
-        private void SetDataGrid()
+        private void SetDataGrid(string formUID)
         {
-            var oForm = this.UIAPIRawForm;
-
-            oForm.Freeze(true);          // >>> tahan repaint
+            var oForm = Application.SBO_Application.Forms.Item(formUID);
             try
             {
+                FormHelper.StartLoading(oForm, "Refreshing data table ...", 0, false);
                 if (listData != null)
                 {
-                    StartProgressBar("Refreshing data table");
-
                     BuildOrResetDataTable(oForm); // isi dt & bind ke GridData
                     GridData.AutoResizeColumns();
 
@@ -539,8 +507,7 @@ namespace ProductionOrderAddOn
             }
             finally
             {
-                oForm.Freeze(false);     // >>> lepaskan, UI refresh sekali saja
-                StopProgressBar();
+                FormHelper.FinishLoading(oForm);
             }
         }
 

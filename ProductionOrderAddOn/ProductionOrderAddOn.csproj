@@ -161,6 +161,7 @@
     <Reference Include="WindowsBase" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Helpers\FormHelper.cs" />
     <Compile Include="Models\BomModel .cs" />
     <Compile Include="Models\ProductionKey.cs" />
     <Compile Include="Models\ProductionOrderModel.cs" />

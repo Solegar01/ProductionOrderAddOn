@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using ProductionOrderAddOn.Helpers;
 using ProductionOrderAddOn.Services;
 using SAPbobsCOM;
 using SAPbouiCOM.Framework;
@@ -13,7 +14,6 @@ namespace ProductionOrderAddOn
     {
         private string _oldStatus = "";
         private double _oldQty = 0;
-        private SAPbouiCOM.ProgressBar _pb;
 
         public void AddMenuItems()
         {
@@ -41,7 +41,7 @@ namespace ProductionOrderAddOn
                 //  If the manu already exists this code will fail
                 oMenus.AddEx(oCreationPackage);
             }
-            catch (Exception e)
+            catch (Exception )
             {
 
             }
@@ -58,7 +58,7 @@ namespace ProductionOrderAddOn
                 oCreationPackage.String = "Import File Production";
                 oMenus.AddEx(oCreationPackage);
             }
-            catch (Exception er)
+            catch (Exception )
             { //  Menu already exists
                 Application.SBO_Application.SetStatusBarMessage("Menu Already Exists", SAPbouiCOM.BoMessageTime.bmt_Short, true);
             }
@@ -164,7 +164,7 @@ namespace ProductionOrderAddOn
                         {
                             int docEntry = 0;
                             if (int.TryParse(ds.GetValue("DocEntry", 0).Trim(), out int parsedEntry)) docEntry = parsedEntry;
-                            CancelSubOrder(docEntry);
+                            CancelSubOrder(oForm,docEntry);
                         }
                     }
                 }
@@ -191,7 +191,7 @@ namespace ProductionOrderAddOn
                     {
                         _oldStatus = "";
                         _oldQty = 0;
-                        _pb = null;
+                        FormHelper.FinishLoading(oForm);
                     }
                 }
 
@@ -294,13 +294,12 @@ namespace ProductionOrderAddOn
         private bool BeforeUpdateHandler(string FormUID)
         {
             bool result = true; // ✅ Default allow
+            SAPbouiCOM.Form oForm = Application.SBO_Application.Forms.Item(FormUID);
             try
             {
-                if (_pb != null) { _pb.Stop(); _pb = null; }
-                Company oCompany = Services.CompanyService.GetCompany();
-                _pb = Application.SBO_Application.StatusBar.CreateProgressBar("Validating Production Order...", 0, false);
+                FormHelper.StartLoading(oForm, "Validating Production Order...", 0, false);
 
-                SAPbouiCOM.Form oForm = Application.SBO_Application.Forms.Item(FormUID);
+                Company oCompany = Services.CompanyService.GetCompany();
                 SAPbouiCOM.DBDataSource ds = oForm.DataSources.DBDataSources.Item("OWOR");
 
                 string docEntryStr = ds.GetValue("DocEntry", 0).Trim();
@@ -391,7 +390,7 @@ namespace ProductionOrderAddOn
             }
             finally
             {
-                if (_pb != null) { _pb.Stop(); _pb = null; }
+                FormHelper.FinishLoading(oForm);
             }
         }
 
@@ -400,10 +399,10 @@ namespace ProductionOrderAddOn
             int docEntry = 0;
             bool isGenerate = false;
             Company oCompany = null;
+            SAPbouiCOM.Form oForm = Application.SBO_Application.Forms.Item(FormUID);
             try
             {
                 oCompany = Services.CompanyService.GetCompany();
-                SAPbouiCOM.Form oForm = Application.SBO_Application.Forms.Item(FormUID);
                 oCompany.StartTransaction();
                 SAPbouiCOM.DBDataSource ds = oForm.DataSources.DBDataSources.Item("OWOR");
 
@@ -422,12 +421,10 @@ namespace ProductionOrderAddOn
                     {
                         isGenerate = true;
                         // Tambahkan proses kamu di sini
-                        if (_pb != null) { _pb.Stop(); _pb = null; }
-                        _pb = Application.SBO_Application.StatusBar.CreateProgressBar("Generating sub-orders...", 100, false);
+                        FormHelper.StartLoading(oForm, "Generating sub-orders...", 0, false);
 
                         // Generate suborder
-                        _pb.Value = 0;
-                        _pb.Text = "Generating Sub Production Orders...";
+                        FormHelper.SetTextValueLoading(oForm, 0, "Generating Sub Production Orders...");
                         var listDoc = ProductionOrderSapService.GenerateSubOrder(oCompany, docEntry);
                         foreach (var item in listDoc)
                         {
@@ -442,29 +439,19 @@ namespace ProductionOrderAddOn
 
                         }
 
-                        _pb.Value = 100; // Ensure it reaches the end
-                        _pb.Text = "Done.";
-                        _pb.Stop();
-
                         RefreshFormProdOrder(oForm, docEntry, "Sub production orders successfully genareted.");
                     }
                     else if (newStatus == "R" && prodType == "FG" && _oldQty != plannedQty)
                     {
                         isGenerate = false;
                         // Tambahkan proses kamu di sini
-                        if (_pb != null) { _pb.Stop(); _pb = null; }
-                        _pb = Application.SBO_Application.StatusBar.CreateProgressBar("Updating sub-orders...", 100, false);
+                        FormHelper.StartLoading(oForm, "Updating sub-orders...", 0, false);
 
                         // Generate suborder
-                        _pb.Value = 0;
-                        _pb.Text = "Updating WIP Production Orders...";
+                        FormHelper.SetTextValueLoading(oForm, 0, "Updating WIP Production Orders...");
 
                         if (!ProductionOrderSapService.UpdateSubOrder(oCompany, docEntry))
                             throw new Exception("There is no documents updated.");
-
-                        _pb.Value = 100; // Ensure it reaches the end
-                        _pb.Text = "Done.";
-                        _pb.Stop();
 
                         RefreshFormProdOrder(oForm, docEntry, "Sub production orders successfully updated.");
                     }
@@ -495,7 +482,7 @@ namespace ProductionOrderAddOn
             }
             finally
             {
-                if (_pb != null) { _pb.Stop(); _pb = null; }
+                FormHelper.FinishLoading(oForm);
             }
         }
 
@@ -565,16 +552,14 @@ namespace ProductionOrderAddOn
             }
         }
 
-        private void CancelSubOrder(int docEntry)
+        private void CancelSubOrder(SAPbouiCOM.Form oForm, int docEntry)
         {
             Company oCompany = null;
             try
             {
-                if (_pb != null) { _pb.Stop(); _pb = null; }
-                _pb = Application.SBO_Application.StatusBar.CreateProgressBar("Cancelling sub-orders...", 100, false);
+                FormHelper.StartLoading(oForm, "Cancelling sub-orders...", 0, false);
+                FormHelper.SetTextValueLoading(oForm, 0, "Cancelling Sub Production Orders...");
 
-                _pb.Value = 0;
-                _pb.Text = "Cancelling Sub Production Orders...";
                 oCompany = Services.CompanyService.GetCompany();
                 oCompany.StartTransaction();
 
@@ -594,10 +579,6 @@ namespace ProductionOrderAddOn
                     });
                 }
 
-                _pb.Value = 100;
-                _pb.Text = "Done.";
-                _pb.Stop();
-
                 if (oCompany.InTransaction)
                     oCompany.EndTransaction(BoWfTransOpt.wf_Commit);
             }
@@ -609,7 +590,7 @@ namespace ProductionOrderAddOn
             }
             finally
             {
-                if (_pb != null) { _pb.Stop(); _pb = null; }
+                FormHelper.FinishLoading(oForm);
             }
         }
     }
