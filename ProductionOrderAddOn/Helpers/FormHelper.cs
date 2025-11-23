@@ -10,16 +10,17 @@ namespace ProductionOrderAddOn.Helpers
     public static class FormHelper
     {
         private static SAPbouiCOM.ProgressBar _pb;
+
         public static void StartLoading(SAPbouiCOM.Form oForm, string pbText, int max, bool stopable)
         {
-            if (_pb != null) { _pb.Stop(); System.Runtime.InteropServices.Marshal.ReleaseComObject(_pb); _pb = null; }
+            if (_pb != null) { _pb.Stop(); _pb = null; }
             _pb = Application.SBO_Application.StatusBar.CreateProgressBar(pbText, max, stopable);
             oForm.Freeze(true);
         }
 
         public static void FinishLoading(SAPbouiCOM.Form oForm)
         {
-            if (_pb != null) { _pb.Stop(); System.Runtime.InteropServices.Marshal.ReleaseComObject(_pb); _pb = null; }
+            if (_pb != null) { _pb.Stop(); _pb = null; }
             oForm.Freeze(false);
         }
 

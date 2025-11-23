@@ -399,12 +399,12 @@ namespace ProductionOrderAddOn
             int docEntry = 0;
             bool isGenerate = false;
             Company oCompany = null;
-            SAPbouiCOM.Form oForm = Application.SBO_Application.Forms.Item(FormUID);
+            SAPbouiCOM.Form oActForm = Application.SBO_Application.Forms.ActiveForm;
             try
             {
                 oCompany = Services.CompanyService.GetCompany();
                 oCompany.StartTransaction();
-                SAPbouiCOM.DBDataSource ds = oForm.DataSources.DBDataSources.Item("OWOR");
+                SAPbouiCOM.DBDataSource ds = oActForm.DataSources.DBDataSources.Item("OWOR");
 
                 string docEntryStr = ds.GetValue("DocEntry", 0).Trim();
                 if (int.TryParse(docEntryStr, out docEntry))
@@ -419,40 +419,66 @@ namespace ProductionOrderAddOn
                     // Cek perubahan
                     if (_oldStatus != newStatus && newStatus == "R" && prodType == "FG" && isImported == "N")
                     {
-                        isGenerate = true;
-                        // Tambahkan proses kamu di sini
-                        FormHelper.StartLoading(oForm, "Generating sub-orders...", 0, false);
-
-                        // Generate suborder
-                        FormHelper.SetTextValueLoading(oForm, 0, "Generating Sub Production Orders...");
-                        var listDoc = ProductionOrderSapService.GenerateSubOrder(oCompany, docEntry);
-                        foreach (var item in listDoc)
+                        SAPbouiCOM.Form oForm = Application.SBO_Application.Forms.ActiveForm;
+                        try
                         {
-                            int wipEntry = item.Key;
-                            ProductionOrderSapService.LinkWipToFG(oCompany, docEntry, wipEntry);
+                            isGenerate = true;
+                            // Tambahkan proses kamu di sini
+                            FormHelper.StartLoading(oForm, "Generating sub-orders...", 0, false);
+
+                            // Generate suborder
+                            FormHelper.SetTextValueLoading(oForm, 0, "Generating Sub Production Orders...");
+                            var listDoc = ProductionOrderSapService.GenerateSubOrder(oCompany, docEntry);
+                            foreach (var item in listDoc)
+                            {
+                                int wipEntry = item.Key;
+                                ProductionOrderSapService.LinkWipToFG(oCompany, docEntry, wipEntry);
+                            }
+
+                            if (listDoc != null && listDoc.Any())
+                            {
+                                string remarks = "Sub Production Orders: " + string.Join(" | ", listDoc.Values);
+                                ProductionOrderSapService.UpdateRemarks(oCompany, docEntry, remarks);
+
+                            }
                         }
-
-                        if (listDoc != null && listDoc.Any())
+                        catch (Exception)
                         {
-                            string remarks = "Sub Production Orders: " + string.Join(" | ", listDoc.Values);
-                            ProductionOrderSapService.UpdateRemarks(oCompany, docEntry, remarks);
 
+                            throw;
+                        }
+                        finally
+                        {
+                            FormHelper.FinishLoading(oForm);
                         }
 
                         RefreshFormProdOrder(oForm, docEntry, "Sub production orders successfully genareted.");
                     }
                     else if (newStatus == "R" && prodType == "FG" && _oldQty != plannedQty)
                     {
-                        isGenerate = false;
-                        // Tambahkan proses kamu di sini
-                        FormHelper.StartLoading(oForm, "Updating sub-orders...", 0, false);
+                        SAPbouiCOM.Form oForm = Application.SBO_Application.Forms.ActiveForm;
+                        try
+                        {
+                            isGenerate = false;
+                            // Tambahkan proses kamu di sini
+                            FormHelper.StartLoading(oForm, "Updating sub-orders...", 0, false);
 
-                        // Generate suborder
-                        FormHelper.SetTextValueLoading(oForm, 0, "Updating WIP Production Orders...");
+                            // Generate suborder
+                            FormHelper.SetTextValueLoading(oForm, 0, "Updating WIP Production Orders...");
 
-                        if (!ProductionOrderSapService.UpdateSubOrder(oCompany, docEntry))
-                            throw new Exception("There is no documents updated.");
+                            if (!ProductionOrderSapService.UpdateSubOrder(oCompany, docEntry))
+                                throw new Exception("There is no documents updated.");
+                        }
+                        catch (Exception)
+                        {
 
+                            throw;
+                        }
+                        finally
+                        {
+                            FormHelper.FinishLoading(oForm);
+                        }
+                        
                         RefreshFormProdOrder(oForm, docEntry, "Sub production orders successfully updated.");
                     }
                 }
@@ -479,10 +505,6 @@ namespace ProductionOrderAddOn
                 {
                     ResetQty(oCompany, FormUID);
                 }
-            }
-            finally
-            {
-                FormHelper.FinishLoading(oForm);
             }
         }
 

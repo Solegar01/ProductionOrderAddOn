@@ -333,21 +333,26 @@ namespace ProductionOrderAddOn.Services
             }
         }
 
-        public static bool IsProdOrderExists(Company oCompany,ProductionOrderModel model)
+        public static bool IsProdOrderExists(Company oCompany, ProductionOrderModel model)
         {
             if (model == null)
                 throw new ArgumentNullException(nameof(model));
 
-            // Sanitize ProdNo dan format tanggal dengan benar
-            string prodNo = model.ProdNo.Replace("'", "''"); // untuk hindari SQL injection
-            string dateStr = model.OrderDate.ToString("yyyy-MM-dd");
+            string prodNo = model.ProdNo?.Trim().Replace("'", "''");
+            if (string.IsNullOrEmpty(prodNo))
+                throw new ArgumentException("ProdNo cannot be empty.");
+
+            string dateFrom = model.OrderDate.ToString("yyyy-MM-dd 00:00:00");
+            string dateTo = model.OrderDate.ToString("yyyy-MM-dd 23:59:59");
 
             string sql = $@"
                 SELECT TOP 1 T0.DocEntry
                 FROM OWOR T0
                 WHERE T0.ItemCode = '{prodNo}'
-                AND CAST(T0.PostDate AS DATE) = '{dateStr}'
-                AND ISNULL(Status,'') <> 'C'   ";
+                  AND T0.PostDate BETWEEN '{dateFrom}' AND '{dateTo}'
+                  AND ISNULL(T0.Status, '') <> 'C'
+                  AND T0.U_T2_Is_Import = 'Y'
+            ";
 
             try
             {
@@ -359,6 +364,7 @@ namespace ProductionOrderAddOn.Services
                 throw new Exception("Error while validating production orders: " + ex.Message, ex);
             }
         }
+
 
         public static Dictionary<int,string> GenerateSubOrder(Company oCompany,int docEntry, string fileName = "")
         {
@@ -649,7 +655,9 @@ namespace ProductionOrderAddOn.Services
 
                 if (!po.GetByKey(docEntry))
                     throw new InvalidOperationException($"Production Order DocEntry {docEntry} not found.");
-                po.Remarks = (string.IsNullOrEmpty(po.Remarks)) ? remarks : $"{po.Remarks}{Environment.NewLine}{remarks}";
+                string uRemarks = po.UserFields.Fields.Item("U_T2_RemarksWO").Value.ToString();
+                po.UserFields.Fields.Item("U_T2_RemarksWO").Value = (string.IsNullOrEmpty(uRemarks)) ? remarks : $"{uRemarks}{Environment.NewLine}{remarks}";
+                //po.Remarks = (string.IsNullOrEmpty(po.Remarks)) ? remarks : $"{po.Remarks}{Environment.NewLine}{remarks}";
 
                 if (po.Update() != 0)
                 {

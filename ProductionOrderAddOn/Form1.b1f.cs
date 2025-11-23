@@ -352,6 +352,8 @@ namespace ProductionOrderAddOn
                     }
                 }
 
+                throw new Exception("TEST");
+
                 string fileName = System.IO.Path.GetFileName(FilePath);
                 
                 List<int> fgDocEntries = new List<int>();

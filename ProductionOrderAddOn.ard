@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<AddOnRegData xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" SlientInstallation="No" SlientUpgrade="No" Partnernmsp="T2.ProductionOrderAddOn" SchemaVersion="3.0" Type="" MultipleVersion="false" OnDemand="" OnPremise="" ExtName="ProductionOrderAddOn" ExtVersion="1.0.0.1" Contdata="" Partner="Think Tank Solusindo" DBType="MSSQL" ClientType="W">
+<AddOnRegData xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" SlientInstallation="No" SlientUpgrade="No" Partnernmsp="T2.ProductionOrderAddOn" SchemaVersion="3.0" Type="" MultipleVersion="false" OnDemand="" OnPremise="" ExtName="Production Order Add-On" ExtVersion="1.0.1" Contdata="" Partner="Think Tank Solusindo" DBType="MSSQL" ClientType="A">
   <Validity>
     <SBOCompatibility>
       <Version From="10.00.140" To="10.00.999" />
@@ -18,15 +18,23 @@
   </Configuration>
   <Addons>
     <Addon Name="" Group="" ForceFlag="" Visible="" AutoAssign="" SelfUpgrd="">
-      <x86 AddonExe="" AddonSig="" AddonSigSha256="">
+      <x86 AddonExe="D:\Source\Add On\ProductionOrderAddOn\ProductionOrderAddOn\bin\Debug\ProductionOrderAddOn.exe" AddonSig="" AddonSigSha256="">
         <Installation>
-          <Files />
+          <Files>
+            <File FileName="ProductionOrderAddOn.exe">
+              <Actions />
+            </File>
+          </Files>
         </Installation>
         <Uninstallation>
-          <Files />
+          <Files>
+            <File FileName="ProductionOrderAddOn.exe">
+              <Actions />
+            </File>
+          </Files>
         </Uninstallation>
       </x86>
-      <x64 AddonExe="C:\Think Tank\Src\ProductionOrderAddOn\ProductionOrderAddOn\bin\x64\Debug\ProductionOrderAddOn.exe" AddonSig="">
+      <x64 AddonExe="D:\Source\Add On\ProductionOrderAddOn\ProductionOrderAddOn\bin\x64\Debug\ProductionOrderAddOn.exe" AddonSig="">
         <Installation>
           <Files>
             <File FileName="ClosedXML.dll">
