@@ -339,7 +339,6 @@ namespace ProductionOrderAddOn
                     if (!this.ImportFromExcelProdOrder(formUID))
                         ClearDataModel();
 
-
                 if (listData == null || listData.Count == 0)
                     throw new Exception("No data found in the selected file.");
 
@@ -352,8 +351,6 @@ namespace ProductionOrderAddOn
                     }
                 }
 
-                throw new Exception("TEST");
-
                 string fileName = System.IO.Path.GetFileName(FilePath);
                 
                 List<int> fgDocEntries = new List<int>();
@@ -362,6 +359,7 @@ namespace ProductionOrderAddOn
                 {
                     if (item.Qty > 0)
                     {
+                        item.ProcessCode = ProductionOrderSapService.GetProcessCode(oCompany, item.ProdNo);
                         var resultEntry = ProductionOrderSapService.CreateProductionOrder(oCompany, fileName, item);
                         var listDoc = ProductionOrderSapService.GenerateSubOrder(oCompany, resultEntry, fileName);
                         foreach (var dictionary in listDoc)

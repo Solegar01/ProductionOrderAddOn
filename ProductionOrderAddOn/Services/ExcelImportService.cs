@@ -118,6 +118,7 @@ namespace ProductionOrderAddOn.Services
                             }
                         }
                     }
+
                     if (results.Any())
                     {
                         // Find duplicates
@@ -132,6 +133,8 @@ namespace ProductionOrderAddOn.Services
                             throw new Exception ("Duplicates found for Item: " + string.Join(", ", duplicateIds));
                         }
 
+
+
                         results = results.OrderBy(r => r.OrderDate).ToList();
                     }
                 }
@@ -145,6 +148,7 @@ namespace ProductionOrderAddOn.Services
             return results;
         }
 
+        
     }
 
 }

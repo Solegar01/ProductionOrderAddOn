@@ -2,7 +2,7 @@
 <AddOnRegData xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" SlientInstallation="No" SlientUpgrade="No" Partnernmsp="T2.ProductionOrderAddOn" SchemaVersion="3.0" Type="" MultipleVersion="false" OnDemand="" OnPremise="" ExtName="Production Order Add-On" ExtVersion="1.0.1" Contdata="" Partner="Think Tank Solusindo" DBType="MSSQL" ClientType="A">
   <Validity>
     <SBOCompatibility>
-      <Version From="10.00.140" To="10.00.999" />
+      <Version From="1000.260.00" To="1000.999.99" />
     </SBOCompatibility>
   </Validity>
   <Configuration>

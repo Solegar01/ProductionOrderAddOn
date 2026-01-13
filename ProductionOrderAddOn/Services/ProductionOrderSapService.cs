@@ -60,7 +60,9 @@ namespace ProductionOrderAddOn.Services
                             po.UserFields.Fields.Item("U_T2_Ref_Production").Value = m.RefProdEntry;
                         if (!string.IsNullOrEmpty(m.RefProdEntry))
                             po.UserFields.Fields.Item("U_T2_Ref_Prod_DocNum").Value = m.RefProdNum;
-                        
+                        if (!string.IsNullOrEmpty(m.ProcessCode))
+                            po.UserFields.Fields.Item("U_T2_ProcessCode").Value = m.ProcessCode;
+
                         int rc = po.Add();
                         if (rc != 0)
                         {
@@ -119,6 +121,10 @@ namespace ProductionOrderAddOn.Services
                 po.StartDate = model.OrderDate.Date;
                 po.DueDate = model.OrderDate.Date;
                 po.UserFields.Fields.Item("U_T2_PRODTYPE").Value = model.ProdType.ToString();
+                if (!string.IsNullOrEmpty(model.ProcessCode))
+                {
+                    po.UserFields.Fields.Item("U_T2_ProcessCode").Value = model.ProcessCode;
+                }
 
                 if (!string.IsNullOrEmpty(fileName))
                 {
@@ -195,12 +201,14 @@ namespace ProductionOrderAddOn.Services
                             t2.Code        AS ProdNo,
                             t2.ItemName    AS ProdDesc,
                             t3.PlannedQty  AS Qty,
-                            CAST(t0.PostDate AS DATE) AS OrderDate
+                            CAST(t0.PostDate AS DATE) AS OrderDate,
+                            t4.U_T2_Process_Code AS ProcessCode
                         FROM OWOR  t0
                         INNER JOIN OITT t1 ON t0.ItemCode = t1.Code
                         INNER JOIN ITT1 t2 ON t1.Code     = t2.Father
                         INNER JOIN WOR1 t3 ON t3.DocEntry = t0.DocEntry
                                             AND t3.ItemCode = t2.Code
+                        INNER JOIN OITM t4 ON t2.Code = t4.ItemCode
                         WHERE t0.DocEntry IN ({inClause})
                             AND ISNULL(t2.U_T2_ITEM_GROUP, '') = '1'
                         ORDER BY t0.PostDate DESC, t2.Code;";
@@ -212,7 +220,8 @@ namespace ProductionOrderAddOn.Services
                             t2.Code        AS ProdNo,
                             t2.ItemName    AS ProdDesc,
                             t3.PlannedQty  AS Qty,
-                            CAST(t0.PostDate AS DATE) AS OrderDate
+                            CAST(t0.PostDate AS DATE) AS OrderDate,
+                            t4.U_T2_Process_Code AS ProcessCode
                         FROM OWOR  t0
                         INNER JOIN OITT t1 ON t0.ItemCode = t1.Code
                         INNER JOIN ITT1 t2 ON t1.Code     = t2.Father
@@ -241,6 +250,7 @@ namespace ProductionOrderAddOn.Services
                         Qty = Convert.ToDouble(row["Qty"]),
                         OrderDate = Convert.ToDateTime(row["OrderDate"]),
                         ProdType = ProductionType.WIP,
+                        ProcessCode = row["ProcessCode"].ToString(),
                     };
                     result.Add(newOrder);
                 }
@@ -286,7 +296,8 @@ namespace ProductionOrderAddOn.Services
                                 T1.Code AS ProdNo,
                                 T2.ItemName AS ProdDesc,
                                 CAST(((T1.Quantity * {qty})/T0.Qauntity) AS DECIMAL(19,6))  AS Qty,
-                                CAST(T3.PostDate AS DATE) AS OrderDate
+                                CAST(T3.PostDate AS DATE) AS OrderDate,
+                                T2.U_T2_Process_Code AS ProcessCode
                             FROM OITT T0
                             INNER JOIN ITT1 T1 ON T0.Code = T1.Father
                             INNER JOIN OITM T2 ON T2.ItemCode = T1.Code
@@ -322,6 +333,7 @@ namespace ProductionOrderAddOn.Services
                         Qty = Convert.ToDouble(row["Qty"]),
                         OrderDate = Convert.ToDateTime(row["OrderDate"]),
                         ProdType = ProductionType.WIP,
+                        ProcessCode = row["ProcessCode"].ToString(),
                     });
                 }
 
@@ -782,6 +794,33 @@ namespace ProductionOrderAddOn.Services
             finally
             {
                 if (oProd != null) System.Runtime.InteropServices.Marshal.ReleaseComObject(oProd);
+            }
+        }
+
+        public static string GetProcessCode(Company oCompany, string itemCode)
+        {
+            string sql = $@"SELECT TOP 1 T1.U_T2_Process_Code 
+                            FROM OITT T0
+                            INNER JOIN OITM T1 ON T1.ItemCode = T0.Code
+                            WHERE T0.Code = '{itemCode}' 
+                        ";
+            string processCode = string.Empty;
+            try
+            {
+                Recordset rs = null;
+                rs = (SAPbobsCOM.Recordset)oCompany.GetBusinessObject(SAPbobsCOM.BoObjectTypes.BoRecordset);
+                rs.DoQuery(sql);
+
+                if (!rs.EoF)
+                {
+                    processCode = rs.Fields.Item("U_T2_Process_Code").Value.ToString();
+                }
+
+                return processCode;
+            }
+            catch (Exception)
+            {
+                throw;
             }
         }
 

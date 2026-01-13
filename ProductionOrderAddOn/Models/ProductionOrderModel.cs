@@ -15,6 +15,7 @@ namespace ProductionOrderAddOn.Models
         public ProductionType ProdType { get; set; }
         public string RefProdEntry { get; set; }
         public string RefProdNum { get; set; }
+        public string ProcessCode { get; set; }
     }
 
     public enum ProductionType
